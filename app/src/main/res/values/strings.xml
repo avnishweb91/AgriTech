@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">बिहार एग्री-टेक स्मार्ट हब</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">होम</string>
+    <string name="nav_disease">फसल रोग</string>
+    <string name="nav_prices">मंडी भाव</string>
+    <string name="nav_marketplace">मार्केटप्लेस</string>
+    <string name="nav_weather">मौसम</string>
+    <string name="nav_schemes">योजनाएं</string>
+    <string name="nav_profile">प्रोफाइल</string>
+    
+    <!-- Common -->
+    <string name="welcome">स्वागत है</string>
+    <string name="login">लॉगिन करें</string>
+    <string name="logout">लॉगआउट</string>
+    <string name="submit">सबमिट करें</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="save">सहेजें</string>
+    <string name="edit">संपादित करें</string>
+    <string name="delete">हटाएं</string>
+    <string name="back">वापस</string>
+    <string name="next">अगला</string>
+    <string name="done">पूर्ण</string>
+    
+    <!-- Login Screen -->
+    <string name="login_title">मोबाइल नंबर से लॉगिन</string>
+    <string name="mobile_number">मोबाइल नंबर</string>
+    <string name="mobile_hint">उदा: 9XXXXXXXXX</string>
+    <string name="send_otp">ओटीपी भेजें</string>
+    <string name="enter_otp">ओटीपी दर्ज करें</string>
+    <string name="otp_hint">6 अंकों का कोड</string>
+    <string name="verify">सत्यापित करें</string>
+    <string name="demo_otp">डेमो: ओटीपी 123456 माना जाए</string>
+    
+    <!-- Home Dashboard -->
+    <string name="greeting">नमस्ते, किसान जी!</string>
+    <string name="dashboard_subtitle">आपका आज का डैशबोर्ड</string>
+    <string name="beta_tag">बीटा</string>
+    
+    <!-- Crop Disease Detection -->
+    <string name="disease_title">एआई फसल रोग पहचान</string>
+    <string name="disease_subtitle">अपने खेत की पत्ती/फसल की साफ़ फोटो अपलोड करें</string>
+    <string name="upload_photo">फोटो अपलोड करें</string>
+    <string name="analyze">विश्लेषण करें</string>
+    <string name="photo_tip">सुझाव: साफ़ रोशनी, पास से, धुंधलापन न हो।</string>
+    <string name="disease_result">संभावित रोग</string>
+    <string name="confidence">विश्वास स्तर</string>
+    <string name="immediate_action">तुरंत क्या करें?</string>
+    <string name="remove_infected">संक्रमित पत्तियाँ हटा दें</string>
+    <string name="organic_option">जैविक विकल्प: नीम तेल 3–5 ml/L छिड़काव</string>
+    <string name="chemical_option">रासायनिक: मैनकोजे़ब 2g/L (लेबल निर्देश देखें)</string>
+    <string name="nearby_stores">पास के कृषि स्टोर</string>
+    <string name="call">कॉल</string>
+    
+    <!-- Mandi Prices -->
+    <string name="prices_title">आज के मंडी भाव</string>
+    <string name="select_crop">फ़सल चुनें</string>
+    <string name="wheat">गेहूँ</string>
+    <string name="rice">धान</string>
+    <string name="maize">मक्का</string>
+    <string name="potato">आलू</string>
+    <string name="onion">प्याज़</string>
+    <string name="tomato">टमाटर</string>
+    <string name="grapes">अंगुर</string>
+    <string name="per_quintal">/ क्विंटल</string>
+    
+    <!-- Marketplace -->
+    <string name="marketplace_title">मार्केटप्लेस</string>
+    <string name="marketplace_subtitle">खरीददारों से सीधे बिक्री करें</string>
+    <string name="list_crop">अपनी फसल सूचीबद्ध करें</string>
+    <string name="buy_requests">खरीद अनुरोध</string>
+    <string name="talk">बात करें</string>
+    <string name="deal">डील</string>
+    <string name="confirm_deal">डील पक्का करें (यूपीआई)</string>
+    
+    <!-- Post Crop -->
+    <string name="add_crop_title">अपनी फसल जोड़ें</string>
+    <string name="crop">फसल</string>
+    <string name="quantity">मात्रा (क्विंटल)</string>
+    <string name="quantity_hint">उदा: 40</string>
+    <string name="quality">गुणवत्ता / ग्रेड</string>
+    <string name="quality_hint">A / B / C</string>
+    <string name="location">स्थान</string>
+    <string name="location_hint">गाँव, ब्लॉक, ज़िला</string>
+    <string name="list_crop_button">सूचीबद्ध करें</string>
+    
+    <!-- Weather & Alerts -->
+    <string name="weather_title">मौसम व अलर्ट</string>
+    <string name="weather_alert">अलर्ट: अगले 24 घंटे में मध्यम वर्षा की संभावना। कटाई टालें, भंडारण ढकें।</string>
+    <string name="today">आज</string>
+    <string name="tomorrow">कल</string>
+    <string name="day_after">परसों</string>
+    <string name="cloudy">मेघ-आवृत</string>
+    <string name="light_rain">हल्की बारिश</string>
+    <string name="clouds">बादल</string>
+    
+    <!-- Government Schemes -->
+    <string name="schemes_title">सरकारी योजनाएँ — आपके लिए</string>
+    <string name="your_crop">आपकी फसल</string>
+    <string name="land_size">भूमि आकार</string>
+    <string name="less_than_one">1 एकड़ से कम</string>
+    <string name="one_to_three">1–3 एकड़</string>
+    <string name="more_than_three">3 एकड़ से अधिक</string>
+    <string name="kcc">किसान क्रेडिट कार्ड (KCC)</string>
+    <string name="kcc_desc">कम ब्याज़ पर ऋण</string>
+    <string name="pmfby">प्रधानमंत्री फसल बीमा</string>
+    <string name="pmfby_desc">फसल क्षति का बीमा</string>
+    <string name="drip_subsidy">ड्रिप सिंचाई सब्सिडी</string>
+    <string name="drip_subsidy_desc">जल-बचत उपकरण</string>
+    <string name="apply">आवेदन</string>
+    
+    <!-- Profile -->
+    <string name="profile_title">मेरी जानकारी</string>
+    <string name="name">नाम</string>
+    <string name="village_district">गाँव / ज़िला</string>
+    <string name="land">भूमि</string>
+    <string name="main_crop">मुख्य फसल</string>
+    <string name="acres">एकड़</string>
+    
+    <!-- Demo Data -->
+    <string name="demo_farmer_name">रामजी प्रसाद</string>
+    <string name="demo_village">मनेर, पटना</string>
+    <string name="demo_land">2.5 एकड़</string>
+    <string name="demo_crops">धान, आलू</string>
+    
+    <!-- Cities -->
+    <string name="patna">पटना</string>
+    <string name="ara">आरा</string>
+    <string name="bhagalpur">भागलपुर</string>
+    <string name="muzaffarpur">मुज़फ्फरपुर</string>
+    <string name="gaya">गया</string>
+    <string name="darbhanga">दरभंगा</string>
+    <string name="chapra">छपरा</string>
+    <string name="sasaram">सासाराम</string>
+    <string name="nawada">नवादा</string>
+    <string name="gasa">गसा</string>
+    
+    <!-- Features -->
+    
+    <!-- Feature descriptions for home dashboard -->
+    <string name="feature_disease_desc">फोटो अपलोड करें, इलाज पाएं</string>
+    <string name="feature_prices_desc">नज़दीकी 5 मंडियाँ</string>
+    <string name="feature_marketplace_desc">सीधे खरीददार से जुड़ें</string>
+    <string name="feature_weather_desc">बोआई/कटाई सलाह</string>
+    <string name="feature_schemes_desc">आपके लिए उपयुक्त</string>
+    <string name="feature_profile_desc">भूमि/फसल जानकारी</string>
+
+    <!-- Feature titles for home dashboard -->
+    <string name="feature_disease">एआई फसल रोग पहचान</string>
+    <string name="feature_prices">लाइव मंडी भाव</string>
+    <string name="feature_marketplace">खरीददार–किसान मार्केटप्लेस</string>
+    <string name="feature_weather">मौसम व बोआई/कटाई अलर्ट</string>
+    <string name="feature_schemes">सरकारी योजना सलाह</string>
+    <string name="feature_profile">प्रोफाइल</string>
+
+    <!-- Welcome messages -->
+    <string name="welcome_title">नमस्ते, किसान जी!</string>
+    <string name="welcome_subtitle">आपका आज का डैशबोर्ड</string>
+    
+    <!-- Store Names -->
+    <string name="gram_seva_kendra">ग्राम सेवा केंद्र</string>
+    <string name="krishi_samadhan">कृषि समाधान</string>
+    <string name="open">खुला</string>
+    <string name="km">किमी</string>
+    
+    <!-- Chat -->
+    <string name="buyer">खरीदार</string>
+    <string name="you">आप</string>
+    
+    <!-- Error Messages -->
+    <string name="error_network">नेटवर्क त्रुटि</string>
+    <string name="error_camera">कैमरा त्रुटि</string>
+    <string name="error_upload">अपलोड त्रुटि</string>
+    <string name="try_again">पुनः प्रयास करें</string>
+</resources>

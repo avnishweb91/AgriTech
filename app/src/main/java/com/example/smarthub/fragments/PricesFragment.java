@@ -1,0 +1,712 @@
+package com.example.smarthub.fragments;
+
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+
+import com.example.smarthub.R;
+import com.example.smarthub.services.MandiPriceService;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+
+public class PricesFragment extends Fragment {
+    
+    private static final String TAG = "PricesFragment";
+    private static final int LOCATION_PERMISSION_REQUEST = 1002;
+    
+    private AutoCompleteTextView cropSpinner, locationSpinner, districtSpinner;
+    private LinearLayout pricesContainer, trendsContainer;
+    private TextView tvLastUpdated, tvSelectedInfo;
+    private MaterialButton btnRefresh, btnViewTrends;
+    
+    private MandiPriceService mandiPriceService;
+    private Location currentLocation;
+    private String selectedCrop = "गेहूँ";
+    private String selectedLocation = "बिहार";
+    private String selectedDistrict = "Patna";
+
+    @Nullable
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_prices, container, false);
+        
+        initializeViews(view);
+        setupMandiService(); // Set up service first
+        setupSpinners(); // Then set up spinners
+        String englishStateName = extractEnglishStateName(selectedLocation);
+        updateDistrictOptions(englishStateName); // Finally update districts with English state name
+        updateSelectedInfo(); // Update display info
+        
+        return view;
+    }
+    
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        
+        // Check location permission and get prices
+        if (checkLocationPermission()) {
+            getCurrentLocationAndPrices();
+        } else {
+            requestLocationPermission();
+        }
+    }
+    
+    private void initializeViews(View view) {
+        cropSpinner = view.findViewById(R.id.crop_spinner);
+        locationSpinner = view.findViewById(R.id.location_spinner);
+        districtSpinner = view.findViewById(R.id.district_spinner);
+        pricesContainer = view.findViewById(R.id.prices_container);
+        trendsContainer = view.findViewById(R.id.trends_container);
+        tvLastUpdated = view.findViewById(R.id.tv_last_updated);
+        tvSelectedInfo = view.findViewById(R.id.tv_selected_info);
+        btnRefresh = view.findViewById(R.id.btn_refresh);
+        btnViewTrends = view.findViewById(R.id.btn_view_trends);
+        
+        // Initially hide trends container
+        if (trendsContainer != null) {
+            trendsContainer.setVisibility(View.GONE);
+        }
+        
+        // Set up test button
+        MaterialButton btnTestDistrict = view.findViewById(R.id.btn_test_district);
+        if (btnTestDistrict != null) {
+            btnTestDistrict.setOnClickListener(v -> testDistrictSelection());
+        }
+    }
+    
+    private void testDistrictSelection() {
+        Log.d(TAG, "Testing district selection...");
+        
+        if (mandiPriceService == null) {
+            Toast.makeText(requireContext(), "सेवा उपलब्ध नहीं है", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Test current state
+        String currentState = selectedLocation;
+        String englishStateName = extractEnglishStateName(currentState);
+        Log.d(TAG, "Current state: " + currentState + " -> English: " + englishStateName);
+        
+        // Get districts for current state
+        List<String> districts = mandiPriceService.getDistrictsByState(englishStateName);
+        Log.d(TAG, "Districts for " + englishStateName + ": " + districts.size());
+        
+        // Show district info
+        StringBuilder info = new StringBuilder();
+        info.append("राज्य: ").append(currentState).append("\n");
+        info.append("English: ").append(englishStateName).append("\n");
+        info.append("जिले: ").append(districts.size()).append("\n");
+        info.append("वर्तमान जिला: ").append(selectedDistrict).append("\n");
+        info.append("पहले 5 जिले: ");
+        
+        for (int i = 0; i < Math.min(5, districts.size()); i++) {
+            info.append(districts.get(i));
+            if (i < Math.min(4, districts.size() - 1)) {
+                info.append(", ");
+            }
+        }
+        
+        Toast.makeText(requireContext(), info.toString(), Toast.LENGTH_LONG).show();
+        
+        // Test district spinner
+        if (districtSpinner != null) {
+            Log.d(TAG, "District spinner adapter count: " + districtSpinner.getAdapter().getCount());
+            Log.d(TAG, "District spinner text: " + districtSpinner.getText());
+            Log.d(TAG, "District spinner enabled: " + districtSpinner.isEnabled());
+        }
+    }
+    
+    private void setupSpinners() {
+        // Crop spinner
+        String[] crops = {
+            "गेहूँ (Wheat)",
+            "धान (Rice)",
+            "मक्का (Maize)",
+            "आलू (Potato)",
+            "प्याज़ (Onion)",
+            "टमाटर (Tomato)",
+            "अंगूर (Grapes)",
+            "दलहन (Pulses)",
+            "तिलहन (Oilseeds)",
+            "गन्ना (Sugarcane)",
+            "कपास (Cotton)",
+            "जूट (Jute)"
+        };
+
+        ArrayAdapter<String> cropAdapter = new ArrayAdapter<>(
+            requireContext(),
+            android.R.layout.simple_dropdown_item_1line,
+            crops
+        );
+
+        cropSpinner.setAdapter(cropAdapter);
+        cropSpinner.setText(crops[0], false);
+        cropSpinner.setEnabled(true);
+
+        // Location spinner
+        String[] locations = {
+            "बिहार (Bihar)",
+            "उत्तर प्रदेश (UP)",
+            "मध्य प्रदेश (MP)",
+            "झारखंड (Jharkhand)",
+            "पश्चिम बंगाल (West Bengal)",
+            "राजस्थान (Rajasthan)",
+            "महाराष्ट्र (Maharashtra)",
+            "कर्नाटक (Karnataka)",
+            "तमिलनाडु (Tamil Nadu)",
+            "आंध्र प्रदेश (Andhra Pradesh)"
+        };
+
+        ArrayAdapter<String> locationAdapter = new ArrayAdapter<>(
+            requireContext(),
+            android.R.layout.simple_dropdown_item_1line,
+            locations
+        );
+
+        locationAdapter.setDropDownViewResource(android.R.layout.simple_dropdown_item_1line);
+        locationSpinner.setAdapter(locationAdapter);
+        locationSpinner.setText(locations[0], false);
+        locationSpinner.setEnabled(true);
+
+        // Set up change listeners
+        cropSpinner.setOnItemClickListener((parent, view1, position, id) -> {
+            selectedCrop = crops[position];
+            Log.d(TAG, "Crop selected: " + selectedCrop);
+            updateSelectedInfo();
+            fetchMandiPrices();
+        });
+
+        locationSpinner.setOnItemClickListener((parent, view1, position, id) -> {
+            selectedLocation = locations[position];
+            Log.d(TAG, "Location selected: " + selectedLocation);
+            
+            // Extract English state name for district lookup
+            String englishStateName = extractEnglishStateName(selectedLocation);
+            Log.d(TAG, "Extracted English state name: " + englishStateName);
+            
+            updateDistrictOptions(englishStateName);
+            updateSelectedInfo();
+            fetchMandiPrices();
+        });
+
+        districtSpinner.setOnItemClickListener((parent, view1, position, id) -> {
+            if (mandiPriceService != null) {
+                String englishStateName = extractEnglishStateName(selectedLocation);
+                List<String> districts = mandiPriceService.getDistrictsByState(englishStateName);
+                if (position < districts.size()) {
+                    selectedDistrict = districts.get(position);
+                    Log.d(TAG, "District selected: " + selectedDistrict);
+                    updateSelectedInfo();
+                    fetchMandiPrices();
+                }
+            } else {
+                Log.e(TAG, "MandiPriceService is null in district selection");
+                Toast.makeText(requireContext(), "सेवा उपलब्ध नहीं है", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Focus change listeners for better compatibility
+        cropSpinner.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                cropSpinner.showDropDown();
+            }
+        });
+
+        locationSpinner.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                locationSpinner.showDropDown();
+            }
+        });
+
+        districtSpinner.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                districtSpinner.showDropDown();
+            }
+        });
+
+        // Initial display - will be updated after service is set up
+        Log.d(TAG, "Spinners setup completed");
+    }
+    
+    private String extractEnglishStateName(String fullStateName) {
+        // Extract English state name from "हिंदी (English)" format
+        if (fullStateName.contains("(") && fullStateName.contains(")")) {
+            String englishPart = fullStateName.substring(fullStateName.indexOf("(") + 1, fullStateName.indexOf(")"));
+            Log.d(TAG, "Extracted English state name: " + englishPart + " from: " + fullStateName);
+            return englishPart.trim();
+        }
+        
+        // If no parentheses, return the original name
+        Log.d(TAG, "No English state name found, using original: " + fullStateName);
+        return fullStateName;
+    }
+    
+    private void updateDistrictOptions(String state) {
+        Log.d(TAG, "Updating district options for state: " + state);
+        
+        if (mandiPriceService == null) {
+            Log.e(TAG, "MandiPriceService is null, cannot update districts");
+            Toast.makeText(requireContext(), "सेवा लोड हो रही है, कृपया प्रतीक्षा करें", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        try {
+            List<String> districts = mandiPriceService.getDistrictsByState(state);
+            Log.d(TAG, "Retrieved " + districts.size() + " districts for " + state);
+            
+            if (districts.isEmpty()) {
+                Log.w(TAG, "No districts found for state: " + state);
+                Toast.makeText(requireContext(), "इस राज्य के लिए जिले उपलब्ध नहीं हैं", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            ArrayAdapter<String> districtAdapter = new ArrayAdapter<>(
+                requireContext(),
+                android.R.layout.simple_dropdown_item_1line,
+                districts
+            );
+            
+            districtAdapter.setDropDownViewResource(android.R.layout.simple_dropdown_item_1line);
+            districtSpinner.setAdapter(districtAdapter);
+            
+            // Set first district as default
+            selectedDistrict = districts.get(0);
+            districtSpinner.setText(selectedDistrict, false);
+            
+            Log.d(TAG, "Successfully updated district options. Selected district: " + selectedDistrict);
+            
+            // Enable district spinner
+            districtSpinner.setEnabled(true);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating district options: " + e.getMessage(), e);
+            Toast.makeText(requireContext(), "जिले लोड करने में त्रुटि: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    private void setupMandiService() {
+        mandiPriceService = new MandiPriceService(requireContext());
+    }
+    
+    private boolean checkLocationPermission() {
+        return ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) 
+                == PackageManager.PERMISSION_GRANTED;
+    }
+    
+    private void requestLocationPermission() {
+        ActivityCompat.requestPermissions(requireActivity(), 
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 
+                LOCATION_PERMISSION_REQUEST);
+    }
+    
+    private void getCurrentLocationAndPrices() {
+        try {
+            LocationManager locationManager = (LocationManager) requireActivity().getSystemService(Context.LOCATION_SERVICE);
+            
+            if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) 
+                        == PackageManager.PERMISSION_GRANTED) {
+                    
+                    currentLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                    
+                    if (currentLocation != null) {
+                        Log.d(TAG, "Location obtained: " + currentLocation.getLatitude() + ", " + currentLocation.getLongitude());
+                        fetchMandiPrices();
+                    } else {
+                        currentLocation = createDefaultLocation();
+                        Log.d(TAG, "Using default location: Patna, Bihar");
+                        fetchMandiPrices();
+                    }
+                }
+            } else {
+                currentLocation = createDefaultLocation();
+                Log.d(TAG, "GPS not available, using default location: Patna, Bihar");
+                fetchMandiPrices();
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting location: " + e.getMessage(), e);
+            currentLocation = createDefaultLocation();
+            fetchMandiPrices();
+        }
+    }
+    
+    private Location createDefaultLocation() {
+        Location location = new Location("default");
+        location.setLatitude(25.5941); // Patna, Bihar coordinates
+        location.setLongitude(85.1376);
+        return location;
+    }
+    
+    private void updateSelectedInfo() {
+        String info = String.format("फसल: %s | स्थान: %s | जिला: %s", selectedCrop, selectedLocation, selectedDistrict);
+        if (tvSelectedInfo != null) {
+            tvSelectedInfo.setText(info);
+        }
+        
+        Log.d(TAG, "Selected info updated: " + info);
+    }
+    
+    private void fetchMandiPrices() {
+        if (mandiPriceService != null) {
+            String englishStateName = extractEnglishStateName(selectedLocation);
+            Log.d(TAG, "Fetching mandi prices for: " + selectedCrop + " in " + selectedLocation + " - " + selectedDistrict + " (State: " + englishStateName + ")");
+            
+            // Use district-based prices instead of location-based
+            mandiPriceService.getMandiPricesByDistrict(selectedCrop, englishStateName, selectedDistrict, new MandiPriceService.PriceCallback() {
+                @Override
+                public void onPricesReceived(List<MandiPriceService.MandiPrice> prices) {
+                    requireActivity().runOnUiThread(() -> {
+                        displayMandiPrices(prices);
+                        updateLastUpdated();
+                    });
+                }
+                
+                @Override
+                public void onPriceError(String error) {
+                    requireActivity().runOnUiThread(() -> {
+                        Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show();
+                        showDemoPrices();
+                    });
+                }
+            });
+            
+            // Get price trends
+            mandiPriceService.getPriceTrend(selectedCrop, new MandiPriceService.TrendCallback() {
+                @Override
+                public void onTrendReceived(MandiPriceService.PriceTrend trend) {
+                    requireActivity().runOnUiThread(() -> {
+                        displayPriceTrends(trend);
+                    });
+                }
+                
+                @Override
+                public void onTrendError(String error) {
+                    Log.e(TAG, "Trend error: " + error);
+                }
+            });
+            
+        } else {
+            Log.e(TAG, "MandiPriceService is null");
+            showDemoPrices();
+        }
+    }
+    
+    private void displayMandiPrices(List<MandiPriceService.MandiPrice> prices) {
+        if (pricesContainer == null) return;
+        
+        pricesContainer.removeAllViews();
+        
+        if (prices.isEmpty()) {
+            TextView noPricesText = new TextView(requireContext());
+            noPricesText.setText("इस फसल के लिए मंडी भाव उपलब्ध नहीं हैं");
+            noPricesText.setTextSize(16);
+            noPricesText.setTextColor(getResources().getColor(R.color.text_secondary, null));
+            noPricesText.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+            noPricesText.setPadding(16, 16, 16, 16);
+            pricesContainer.addView(noPricesText);
+            return;
+        }
+        
+        for (MandiPriceService.MandiPrice price : prices) {
+            addPriceCard(price);
+        }
+        
+        Log.d(TAG, "Displayed " + prices.size() + " mandi prices");
+    }
+    
+    private void addPriceCard(MandiPriceService.MandiPrice price) {
+        MaterialCardView card = new MaterialCardView(requireContext());
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        cardParams.setMargins(0, 0, 0, 12);
+        card.setLayoutParams(cardParams);
+        card.setRadius(8);
+        card.setCardElevation(2);
+        card.setCardBackgroundColor(getResources().getColor(R.color.surface, null));
+
+        LinearLayout cardContent = new LinearLayout(requireContext());
+        cardContent.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        cardContent.setOrientation(LinearLayout.HORIZONTAL);
+        cardContent.setPadding(16, 16, 16, 16);
+        cardContent.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        // Left side - Mandi and Crop info
+        LinearLayout leftContent = new LinearLayout(requireContext());
+        leftContent.setLayoutParams(new LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            1
+        ));
+        leftContent.setOrientation(LinearLayout.VERTICAL);
+
+        TextView mandiName = new TextView(requireContext());
+        mandiName.setText(price.mandiNameHindi + " (" + price.mandiName + ")");
+        mandiName.setTextSize(16);
+        mandiName.setTextColor(getResources().getColor(R.color.text_primary, null));
+        mandiName.setTypeface(null, android.graphics.Typeface.BOLD);
+        mandiName.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        leftContent.addView(mandiName);
+
+        TextView cropInfo = new TextView(requireContext());
+        cropInfo.setText(price.cropNameHindi + " (" + price.quality + ")");
+        cropInfo.setTextSize(14);
+        cropInfo.setTextColor(getResources().getColor(R.color.text_secondary, null));
+        cropInfo.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        leftContent.addView(cropInfo);
+
+        // Right side - Price and change info
+        LinearLayout rightContent = new LinearLayout(requireContext());
+        rightContent.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        rightContent.setOrientation(LinearLayout.VERTICAL);
+        rightContent.setGravity(android.view.Gravity.END);
+
+        TextView priceText = new TextView(requireContext());
+        priceText.setText(String.format(Locale.getDefault(), "₹%.2f/%s", price.price, price.unit));
+        priceText.setTextSize(18);
+        priceText.setTextColor(getResources().getColor(R.color.text_primary, null));
+        priceText.setTypeface(null, android.graphics.Typeface.BOLD);
+        priceText.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        rightContent.addView(priceText);
+
+        // Price change indicator
+        if (price.priceChange != 0) {
+            TextView changeText = new TextView(requireContext());
+            String changeSymbol = price.priceChange > 0 ? "↗️" : "↘️";
+            String changeType = price.priceChange > 0 ? "बढ़ा" : "घटा";
+            int changeColor = price.priceChange > 0 ? R.color.success : R.color.error;
+            
+            changeText.setText(String.format(Locale.getDefault(), "%s ₹%.2f (%s)", 
+                changeSymbol, Math.abs(price.priceChange), changeType));
+            changeText.setTextSize(12);
+            changeText.setTextColor(getResources().getColor(changeColor, null));
+            changeText.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+            rightContent.addView(changeText);
+        }
+
+        cardContent.addView(leftContent);
+        cardContent.addView(rightContent);
+        card.addView(cardContent);
+        pricesContainer.addView(card);
+    }
+    
+    private void displayPriceTrends(MandiPriceService.PriceTrend trend) {
+        if (trendsContainer == null) return;
+        
+        trendsContainer.removeAllViews();
+        trendsContainer.setVisibility(View.VISIBLE);
+        
+        // Create trend card
+        MaterialCardView trendCard = new MaterialCardView(requireContext());
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        cardParams.setMargins(0, 0, 0, 16);
+        trendCard.setLayoutParams(cardParams);
+        trendCard.setRadius(12);
+        trendCard.setCardElevation(4);
+        trendCard.setCardBackgroundColor(getResources().getColor(R.color.info, null));
+
+        LinearLayout cardContent = new LinearLayout(requireContext());
+        cardContent.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        cardContent.setOrientation(LinearLayout.VERTICAL);
+        cardContent.setPadding(16, 16, 16, 16);
+
+        // Title
+        TextView titleView = new TextView(requireContext());
+        titleView.setText("📈 मूल्य प्रवृत्ति");
+        titleView.setTextSize(18);
+        titleView.setTextColor(getResources().getColor(R.color.white, null));
+        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleView.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        cardContent.addView(titleView);
+
+        // Trend info
+        TextView trendView = new TextView(requireContext());
+        trendView.setText("प्रवृत्ति: " + trend.trendHindi);
+        trendView.setTextSize(16);
+        trendView.setTextColor(getResources().getColor(R.color.white, null));
+        trendView.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        trendView.setPadding(0, 8, 0, 8);
+        cardContent.addView(trendView);
+
+        TextView avgPriceView = new TextView(requireContext());
+        avgPriceView.setText(String.format(Locale.getDefault(), "औसत मूल्य: ₹%.2f", trend.averagePrice));
+        avgPriceView.setTextSize(14);
+        avgPriceView.setTextColor(getResources().getColor(R.color.white, null));
+        avgPriceView.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        avgPriceView.setPadding(0, 4, 0, 8);
+        cardContent.addView(avgPriceView);
+
+        TextView recommendationView = new TextView(requireContext());
+        recommendationView.setText("सलाह: " + trend.recommendationHindi);
+        recommendationView.setTextSize(14);
+        recommendationView.setTextColor(getResources().getColor(R.color.white, null));
+        recommendationView.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        cardContent.addView(recommendationView);
+
+        trendCard.addView(cardContent);
+        trendsContainer.addView(trendCard);
+    }
+    
+    private void updateLastUpdated() {
+        if (tvLastUpdated != null) {
+            SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault());
+            String currentTime = sdf.format(new Date());
+            tvLastUpdated.setText("अंतिम अपडेट: " + currentTime);
+        }
+    }
+    
+    private void showDemoPrices() {
+        Log.d(TAG, "Showing demo mandi prices for district: " + selectedDistrict);
+        
+        // Create demo prices based on selected district
+        List<MandiPriceService.MandiPrice> demoPrices = new ArrayList<>();
+        
+        // Get district-specific mandis
+        List<String> districtMandis = new ArrayList<>();
+        if (selectedLocation.equalsIgnoreCase("बिहार (Bihar)")) {
+            if (selectedDistrict.equalsIgnoreCase("Patna")) {
+                districtMandis = Arrays.asList("Patna City", "Phulwari", "Bakhtiarpur", "Barh", "Fatuha");
+            } else if (selectedDistrict.equalsIgnoreCase("Ara")) {
+                districtMandis = Arrays.asList("Ara City", "Bikramganj", "Piro", "Sandesh", "Tarari");
+            } else if (selectedDistrict.equalsIgnoreCase("Bhagalpur")) {
+                districtMandis = Arrays.asList("Bhagalpur City", "Kahalgaon", "Naugachhia", "Sultanganj", "Bihpur");
+            } else if (selectedDistrict.equalsIgnoreCase("Muzaffarpur")) {
+                districtMandis = Arrays.asList("Muzaffarpur City", "Motihari", "Sitamarhi", "Sheohar", "Vaishali");
+            } else if (selectedDistrict.equalsIgnoreCase("Gaya")) {
+                districtMandis = Arrays.asList("Gaya City", "Bodh Gaya", "Sherghati", "Tekari", "Fatehpur");
+            } else {
+                districtMandis = Arrays.asList(selectedDistrict + " City", selectedDistrict + " Market", selectedDistrict + " Mandi");
+            }
+        } else {
+            // Generic mandis for other states
+            districtMandis = Arrays.asList(selectedDistrict + " City", selectedDistrict + " Market", selectedDistrict + " Mandi", 
+                selectedDistrict + " Industrial Area", selectedDistrict + " Agricultural Market");
+        }
+        
+        // Generate prices for each mandi in the district
+        for (int i = 0; i < districtMandis.size(); i++) {
+            String mandiName = districtMandis.get(i);
+            String mandiNameHindi = mandiName;
+            
+            // Generate price variation based on mandi location and demand
+            double basePrice = getBasePriceForCrop(selectedCrop);
+            double priceVariation = 0.8 + (Math.random() * 0.4); // ±20% variation
+            double currentPrice = basePrice * priceVariation;
+            double previousPrice = currentPrice * (0.9 + Math.random() * 0.2);
+            
+            // Quality grades
+            String[] qualities = {"A Grade", "B Grade", "C Grade"};
+            String quality = qualities[(int)(Math.random() * qualities.length)];
+            
+            MandiPriceService.MandiPrice price = new MandiPriceService.MandiPrice(
+                mandiName, mandiNameHindi, selectedCrop, selectedCrop, 
+                currentPrice, "क्विंटल", quality, previousPrice
+            );
+            demoPrices.add(price);
+        }
+        
+        displayMandiPrices(demoPrices);
+        updateLastUpdated();
+        
+        // Calculate base price for trend
+        double basePrice = getBasePriceForCrop(selectedCrop);
+        
+        // Show demo trend
+        MandiPriceService.PriceTrend demoTrend = new MandiPriceService.PriceTrend(
+            selectedCrop, selectedCrop, "rising", "बढ़ रहा है",
+            basePrice, 15.0, "मूल्य बढ़ रहे हैं, बिक्री के लिए उपयुक्त समय", "मूल्य बढ़ रहे हैं, बिक्री के लिए उपयुक्त समय"
+        );
+        displayPriceTrends(demoTrend);
+    }
+    
+    private double getBasePriceForCrop(String cropName) {
+        switch (cropName.toLowerCase()) {
+            case "गेहूँ (wheat)": return 1900 + Math.random() * 200;
+            case "धान (rice)": return 2100 + Math.random() * 300;
+            case "मक्का (maize)": return 1800 + Math.random() * 250;
+            case "आलू (potato)": return 1200 + Math.random() * 400;
+            case "प्याज़ (onion)": return 2500 + Math.random() * 500;
+            case "टमाटर (tomato)": return 3000 + Math.random() * 800;
+            default: return 2000 + Math.random() * 300;
+        }
+    }
+    
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        if (requestCode == LOCATION_PERMISSION_REQUEST) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                getCurrentLocationAndPrices();
+            } else {
+                Toast.makeText(requireContext(), "स्थान की अनुमति आवश्यक है मंडी भाव के लिए", Toast.LENGTH_LONG).show();
+                showDemoPrices();
+            }
+        }
+    }
+}

@@ -1,0 +1,170 @@
+package com.example.smarthub.api;
+
+import android.content.Context;
+import android.util.Log;
+import androidx.annotation.NonNull;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.http.GET;
+import retrofit2.http.Query;
+
+import java.util.List;
+import java.util.ArrayList;
+
+public class APIService {
+    private static final String TAG = "APIService";
+    private static final String WEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/";
+    private static final String MANDI_BASE_URL = "https://api.data.gov.in/resource/";
+    
+    private final WeatherAPI weatherAPI;
+    private final MandiAPI mandiAPI;
+    
+    public interface WeatherAPI {
+        @GET("weather")
+        Call<WeatherResponse> getCurrentWeather(
+            @Query("lat") double lat,
+            @Query("lon") double lon,
+            @Query("appid") String apiKey,
+            @Query("units") String units
+        );
+        
+        @GET("forecast")
+        Call<ForecastResponse> getWeatherForecast(
+            @Query("lat") double lat,
+            @Query("lon") double lon,
+            @Query("appid") String apiKey,
+            @Query("units") String units
+        );
+    }
+    
+    public interface MandiAPI {
+        @GET("9ef84268-d588-465a-a308-a864a43d0070")
+        Call<MandiResponse> getMandiPrices(
+            @Query("api-key") String apiKey,
+            @Query("format") String format,
+            @Query("filters") String filters
+        );
+    }
+    
+    public APIService(Context context) {
+        // Initialize Weather API
+        Retrofit weatherRetrofit = new Retrofit.Builder()
+            .baseUrl(WEATHER_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build();
+        weatherAPI = weatherRetrofit.create(WeatherAPI.class);
+        
+        // Initialize Mandi API
+        Retrofit mandiRetrofit = new Retrofit.Builder()
+            .baseUrl(MANDI_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build();
+        mandiAPI = mandiRetrofit.create(MandiAPI.class);
+    }
+    
+    public void getRealWeatherData(double lat, double lon, String apiKey, WeatherCallback callback) {
+        // Use BuildConfig for API key if not provided
+        String key = apiKey != null ? apiKey : com.example.smarthub.BuildConfig.WEATHER_API_KEY;
+        weatherAPI.getCurrentWeather(lat, lon, key, "metric")
+            .enqueue(new Callback<WeatherResponse>() {
+                @Override
+                public void onResponse(@NonNull Call<WeatherResponse> call, @NonNull Response<WeatherResponse> response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        callback.onWeatherReceived(response.body());
+                    } else {
+                        callback.onWeatherError("Weather data not available");
+                    }
+                }
+                
+                @Override
+                public void onFailure(@NonNull Call<WeatherResponse> call, @NonNull Throwable t) {
+                    callback.onWeatherError("Network error: " + t.getMessage());
+                }
+            });
+    }
+    
+    public void getRealMandiPrices(String apiKey, String cropName, MandiCallback callback) {
+        // Use BuildConfig for API key if not provided
+        String key = apiKey != null ? apiKey : com.example.smarthub.BuildConfig.MANDI_API_KEY;
+        String filters = "commodity=" + cropName;
+        mandiAPI.getMandiPrices(key, "json", filters)
+            .enqueue(new Callback<MandiResponse>() {
+                @Override
+                public void onResponse(@NonNull Call<MandiResponse> call, @NonNull Response<MandiResponse> response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        callback.onMandiDataReceived(response.body());
+                    } else {
+                        callback.onMandiError("Mandi data not available");
+                    }
+                }
+                
+                @Override
+                public void onFailure(@NonNull Call<MandiResponse> call, @NonNull Throwable t) {
+                    callback.onMandiError("Network error: " + t.getMessage());
+                }
+            });
+    }
+    
+    public interface WeatherCallback {
+        void onWeatherReceived(WeatherResponse weather);
+        void onWeatherError(String error);
+    }
+    
+    public interface MandiCallback {
+        void onMandiDataReceived(MandiResponse mandiData);
+        void onMandiError(String error);
+    }
+    
+    // Response classes
+    public static class WeatherResponse {
+        public Main main;
+        public Weather[] weather;
+        public Wind wind;
+        public String name;
+    }
+    
+    public static class Main {
+        public double temp;
+        public int humidity;
+        public double pressure;
+    }
+    
+    public static class Weather {
+        public String main;
+        public String description;
+        public String icon;
+    }
+    
+    public static class Wind {
+        public double speed;
+        public int deg;
+    }
+    
+    public static class ForecastResponse {
+        public ForecastItem[] list;
+        
+        public static class ForecastItem {
+            public long dt;
+            public Main main;
+            public Weather[] weather;
+        }
+    }
+    
+    public static class MandiResponse {
+        public Record[] records;
+        
+        public static class Record {
+            public String state;
+            public String district;
+            public String market;
+            public String commodity;
+            public String variety;
+            public String min_price;
+            public String max_price;
+            public String modal_price;
+        }
+    }
+}

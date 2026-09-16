@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/navigation_home">
+
+    <fragment
+        android:id="@+id/navigation_home"
+        android:name="com.example.smarthub.fragments.HomeFragment"
+        android:label="@string/nav_home" />
+
+    <fragment
+        android:id="@+id/navigation_disease"
+        android:name="com.example.smarthub.fragments.DiseaseFragment"
+        android:label="@string/nav_disease" />
+
+    <fragment
+        android:id="@+id/navigation_prices"
+        android:name="com.example.smarthub.fragments.PricesFragment"
+        android:label="@string/nav_prices" />
+
+    <fragment
+        android:id="@+id/navigation_marketplace"
+        android:name="com.example.smarthub.fragments.MarketplaceFragment"
+        android:label="@string/nav_marketplace" />
+
+    <fragment
+        android:id="@+id/navigation_profile"
+        android:name="com.example.smarthub.fragments.ProfileFragment"
+        android:label="@string/nav_profile" />
+
+</navigation>
