@@ -43,6 +43,10 @@ public class HomeFragment extends Fragment {
         setupClickListeners();
         MaterialButton voiceButton = view.findViewById(R.id.btn_voice_command);
         voiceButton.setOnClickListener(v -> startVoiceCommand());
+        MaterialButton coldStorageButton = view.findViewById(R.id.btn_cold_storage);
+        coldStorageButton.setOnClickListener(v ->
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(R.id.navigation_cold_storage));
     }
 
     private void startVoiceCommand() {
@@ -64,7 +68,10 @@ public class HomeFragment extends Fragment {
             case PRICES: navigateToFragment(new PricesFragment(), "PricesFragment"); break;
             case MARKETPLACE: navigateToFragment(new MarketplaceFragment(), "MarketplaceFragment"); break;
             case WEATHER: navigateToFragment(new WeatherFragment(), "WeatherFragment"); break;
-            case COLD_STORAGE: Toast.makeText(requireContext(), "कोल्ड स्टोरेज ट्रैकिंग जल्द उपलब्ध होगी", Toast.LENGTH_LONG).show(); break;
+            case COLD_STORAGE:
+                androidx.navigation.fragment.NavHostFragment.findNavController(this)
+                        .navigate(R.id.navigation_cold_storage);
+                break;
             default: Toast.makeText(requireContext(), "समझ नहीं आया: " + results.get(0), Toast.LENGTH_LONG).show();
         }
     }

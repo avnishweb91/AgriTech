@@ -21,11 +21,6 @@
         android:title="@string/nav_marketplace" />
 
     <item
-        android:id="@+id/navigation_cold_storage"
-        android:icon="@drawable/ic_view"
-        android:title="@string/nav_cold_storage" />
-    
-    <item
         android:id="@+id/navigation_profile"
         android:icon="@drawable/ic_profile"
         android:title="@string/nav_profile" />

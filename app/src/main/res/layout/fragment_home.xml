@@ -56,6 +56,16 @@
             app:iconGravity="textStart"
             style="@style/Widget.Material3.Button.OutlinedButton" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_cold_storage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="🧊 कोल्ड स्टोरेज ट्रैकिंग"
+            app:icon="@drawable/ic_view"
+            app:iconGravity="textStart"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
         <!-- Features Grid -->
         <GridLayout
             android:layout_width="match_parent"
