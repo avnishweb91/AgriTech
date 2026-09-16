@@ -80,7 +80,8 @@ app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ 
 const port = process.env.PORT || 3000;
 const start = async () => {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
-  await pool.query(fs.readFileSync(path.join(process.cwd(), 'server/schema.sql'), 'utf8'));
+  const schemaPath = path.join(path.dirname(new URL(import.meta.url).pathname), '../schema.sql');
+  await pool.query(fs.readFileSync(schemaPath, 'utf8'));
   app.listen(port, () => console.log(`AgriTech API listening on ${port}`));
 };
 start().catch(error => { console.error(error); process.exit(1); });
