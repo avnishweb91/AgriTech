@@ -42,16 +42,18 @@ android {
         buildConfig true
     }
     
-    buildTypes {
+        buildTypes {
         debug {
             buildConfigField "String", "WEATHER_API_KEY", "\"YOUR_WEATHER_API_KEY_HERE\""
             buildConfigField "String", "MANDI_API_KEY", "\"YOUR_MANDI_API_KEY_HERE\""
+            buildConfigField "String", "AGRI_API_BASE_URL", "\"https://agritech-production-23f3.up.railway.app/\""
         }
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             buildConfigField "String", "WEATHER_API_KEY", "\"YOUR_WEATHER_API_KEY_HERE\""
             buildConfigField "String", "MANDI_API_KEY", "\"YOUR_MANDI_API_KEY_HERE\""
+            buildConfigField "String", "AGRI_API_BASE_URL", "\"https://agritech-production-23f3.up.railway.app/\""
         }
     }
 }

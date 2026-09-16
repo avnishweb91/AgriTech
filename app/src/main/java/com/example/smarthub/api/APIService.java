@@ -9,6 +9,8 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 import retrofit2.http.GET;
+import retrofit2.http.Body;
+import retrofit2.http.POST;
 import retrofit2.http.Query;
 
 import java.util.List;
@@ -21,6 +23,39 @@ public class APIService {
     
     private final WeatherAPI weatherAPI;
     private final MandiAPI mandiAPI;
+    private final BackendAPI backendAPI;
+
+    public interface BackendAPI {
+        @POST("auth/request-otp")
+        Call<BasicResponse> requestOtp(@Body OtpRequest request);
+
+        @POST("auth/verify-otp")
+        Call<AuthResponse> verifyOtp(@Body OtpVerifyRequest request);
+    }
+
+    public static class OtpRequest {
+        public final String phone;
+        public OtpRequest(String phone) { this.phone = phone; }
+    }
+
+    public static class OtpVerifyRequest {
+        public final String phone;
+        public final String code;
+        public OtpVerifyRequest(String phone, String code) { this.phone = phone; this.code = code; }
+    }
+
+    public static class BasicResponse { public boolean ok; }
+
+    public static class AuthResponse {
+        public String token;
+        public User user;
+    }
+
+    public static class User {
+        public String id;
+        public String phone;
+        public String role;
+    }
     
     public interface WeatherAPI {
         @GET("weather")
@@ -63,7 +98,15 @@ public class APIService {
             .addConverterFactory(GsonConverterFactory.create())
             .build();
         mandiAPI = mandiRetrofit.create(MandiAPI.class);
+
+        Retrofit backendRetrofit = new Retrofit.Builder()
+            .baseUrl(com.example.smarthub.BuildConfig.AGRI_API_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build();
+        backendAPI = backendRetrofit.create(BackendAPI.class);
     }
+
+    public BackendAPI backend() { return backendAPI; }
     
     public void getRealWeatherData(double lat, double lon, String apiKey, WeatherCallback callback) {
         // Use BuildConfig for API key if not provided

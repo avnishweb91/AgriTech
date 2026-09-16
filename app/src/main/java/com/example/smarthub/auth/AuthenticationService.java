@@ -11,6 +11,12 @@ import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 
+import com.example.smarthub.api.APIService;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+
 import java.util.UUID;
 
 /** Local-first authentication. Replace the OTP methods with a REST API adapter for production SMS. */
@@ -19,10 +25,12 @@ public class AuthenticationService {
     private static final String KEY_USER_ID = "user_id";
     private static final String KEY_PHONE = "phone_number";
     private static final String KEY_IS_LOGGED_IN = "is_logged_in";
+    private static final String KEY_TOKEN = "auth_token";
     private final Context context;
     private final SharedPreferences preferences;
     private String pendingPhone;
     private String pendingOtp;
+    private final APIService apiService;
     private AuthenticationCallback authCallback;
 
     public interface AuthenticationCallback {
@@ -43,31 +51,50 @@ public class AuthenticationService {
     public AuthenticationService(Context context) {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        apiService = new APIService(this.context);
     }
 
     public void setAuthenticationCallback(AuthenticationCallback callback) { authCallback = callback; }
 
-    /** Demo OTP is 123456. A backend adapter should send the generated code over SMS. */
+    /** Requests a real SMS through the Railway API and Twilio Verify. */
     public void startPhoneNumberVerification(String phoneNumber, Activity activity) {
         if (TextUtils.isEmpty(phoneNumber)) {
             if (authCallback != null) authCallback.onVerificationFailed(new IllegalArgumentException("Phone number is required"));
             return;
         }
         pendingPhone = phoneNumber;
-        pendingOtp = "123456";
-        if (authCallback != null) authCallback.onVerificationCodeSent(phoneNumber);
+        apiService.backend().requestOtp(new APIService.OtpRequest(phoneNumber)).enqueue(new Callback<APIService.BasicResponse>() {
+            @Override public void onResponse(@NonNull Call<APIService.BasicResponse> call, @NonNull Response<APIService.BasicResponse> response) {
+                if (response.isSuccessful()) {
+                    if (authCallback != null) authCallback.onVerificationCodeSent(phoneNumber);
+                } else if (authCallback != null) {
+                    authCallback.onVerificationFailed(new Exception("OTP service rejected the request (HTTP " + response.code() + ")"));
+                }
+            }
+            @Override public void onFailure(@NonNull Call<APIService.BasicResponse> call, @NonNull Throwable t) {
+                if (authCallback != null) authCallback.onVerificationFailed(new Exception("Network error: " + t.getMessage(), t));
+            }
+        });
     }
 
     public void verifyPhoneNumberWithCode(String code) {
-        if (pendingPhone == null || pendingOtp == null) {
+        if (pendingPhone == null) {
             if (authCallback != null) authCallback.onAuthFailure("पहले OTP भेजें");
-        } else if (!pendingOtp.equals(code)) {
-            if (authCallback != null) authCallback.onAuthFailure("OTP गलत है");
         } else {
-            String userId = preferences.getString(KEY_USER_ID, null);
-            if (userId == null) userId = UUID.nameUUIDFromBytes(pendingPhone.getBytes()).toString();
-            saveAuthState(true, userId, pendingPhone);
-            if (authCallback != null) authCallback.onAuthSuccess(userId, pendingPhone);
+            apiService.backend().verifyOtp(new APIService.OtpVerifyRequest(pendingPhone, code)).enqueue(new Callback<APIService.AuthResponse>() {
+                @Override public void onResponse(@NonNull Call<APIService.AuthResponse> call, @NonNull Response<APIService.AuthResponse> response) {
+                    APIService.AuthResponse body = response.body();
+                    if (response.isSuccessful() && body != null && body.token != null && body.user != null) {
+                        saveAuthState(true, body.user.id, body.user.phone, body.token);
+                        if (authCallback != null) authCallback.onAuthSuccess(body.user.id, body.user.phone);
+                    } else if (authCallback != null) {
+                        authCallback.onAuthFailure(response.code() == 401 ? "OTP गलत है" : "सत्यापन सेवा उपलब्ध नहीं है");
+                    }
+                }
+                @Override public void onFailure(@NonNull Call<APIService.AuthResponse> call, @NonNull Throwable t) {
+                    if (authCallback != null) authCallback.onAuthFailure("Network error: " + t.getMessage());
+                }
+            });
         }
     }
 
@@ -78,9 +105,15 @@ public class AuthenticationService {
     public String getCurrentUserPhone() { return preferences.getString(KEY_PHONE, null); }
 
     private void saveAuthState(boolean loggedIn, String userId, String phone) {
-        preferences.edit().putBoolean(KEY_IS_LOGGED_IN, loggedIn).putString(KEY_USER_ID, userId)
-                .putString(KEY_PHONE, phone).apply();
+        saveAuthState(loggedIn, userId, phone, null);
     }
+
+    private void saveAuthState(boolean loggedIn, String userId, String phone, String token) {
+        preferences.edit().putBoolean(KEY_IS_LOGGED_IN, loggedIn).putString(KEY_USER_ID, userId)
+                .putString(KEY_PHONE, phone).putString(KEY_TOKEN, token).apply();
+    }
+
+    public String getAuthToken() { return preferences.getString(KEY_TOKEN, null); }
 
     public void checkBiometricAvailability(BiometricCallback callback) {
         int result = BiometricManager.from(context).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK);
