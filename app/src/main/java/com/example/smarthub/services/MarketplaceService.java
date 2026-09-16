@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Arrays;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.example.smarthub.api.APIService;
+import retrofit2.Response;
 
 public class MarketplaceService {
     private static final String TAG = "MarketplaceService";
@@ -37,6 +39,8 @@ public class MarketplaceService {
     private final List<MarketplaceUpdateListener> updateListeners;
     private final android.content.SharedPreferences localStore;
     private final Gson gson = new Gson();
+    private final APIService apiService;
+    private final android.content.SharedPreferences authStore;
     
     // Singleton instance
     private static MarketplaceService instance;
@@ -128,6 +132,18 @@ public class MarketplaceService {
             this.contactCount = 0;
         }
 
+        public CropListing(String listingId, String farmerId, String cropName, double quantity, String unit,
+                           String quality, double pricePerUnit, String location, String state,
+                           String description, String status, long listingDate) {
+            this.listingId = listingId; this.farmerId = farmerId; this.farmerName = "किसान";
+            this.farmerNameHindi = "किसान"; this.farmerPhone = ""; this.cropName = cropName;
+            this.cropNameHindi = cropName; this.quantity = quantity; this.unit = unit;
+            this.quality = quality; this.pricePerUnit = pricePerUnit; this.location = location;
+            this.state = state; this.latitude = 0; this.longitude = 0; this.listingDate = listingDate;
+            this.status = status == null ? "active" : status; this.description = description;
+            this.images = new ArrayList<>(); this.viewCount = 0; this.contactCount = 0;
+        }
+
         private String generateListingId() {
             return "LIST_" + System.currentTimeMillis() + "_" + (new Random()).nextInt(1000);
         }
@@ -180,6 +196,17 @@ public class MarketplaceService {
             this.description = description;
             this.deliveryPreference = deliveryPreference;
             this.requiredByDate = requiredByDate;
+        }
+
+        public BuyRequest(String requestId, String buyerId, String cropName, double quantity, String unit,
+                          double maxPricePerUnit, String location, String state, String status, long requestDate) {
+            this.requestId = requestId; this.buyerId = buyerId; this.buyerName = "खरीदार";
+            this.buyerNameHindi = "खरीदार"; this.buyerPhone = ""; this.cropName = cropName;
+            this.cropNameHindi = cropName; this.requiredQuantity = quantity; this.unit = unit;
+            this.maxPricePerUnit = maxPricePerUnit; this.location = location; this.state = state;
+            this.latitude = 0; this.longitude = 0; this.requestDate = requestDate; this.urgency = "medium";
+            this.status = status == null ? "open" : status; this.description = "";
+            this.deliveryPreference = "both"; this.requiredByDate = 0;
         }
 
         private String generateRequestId() {
@@ -310,6 +337,8 @@ public class MarketplaceService {
         this.transactions = new ConcurrentHashMap<>();
         this.updateListeners = new ArrayList<>();
         this.localStore = context.getApplicationContext().getSharedPreferences("marketplace_local", Context.MODE_PRIVATE);
+        this.apiService = new APIService(context.getApplicationContext());
+        this.authStore = context.getApplicationContext().getSharedPreferences("auth_prefs", Context.MODE_PRIVATE);
         
         // Seed demo data only on first run; local records survive restarts.
         if (localStore.contains("listings")) restorePersistedData();
@@ -412,13 +441,25 @@ public class MarketplaceService {
                 Log.d(TAG, "Creating crop listing for farmer: " + farmerId + " in " + state);
                 
                 UserProfile farmer = userProfiles.get(farmerId);
-                if (farmer == null) {
+                String token = authStore.getString("auth_token", null);
+                if (farmer == null && token == null) {
                     callback.onListingError("User profile not found");
                     return;
                 }
                 
-                // Simulate network delay
-                Thread.sleep(1000);
+                if (token != null) {
+                    Response<APIService.BackendListing> remote = apiService.backend().createListing(
+                            "Bearer " + token,
+                            new APIService.ListingRequest(cropName, quantity, "quintal", quality, pricePerUnit, location, state, description)
+                    ).execute();
+                    if (remote.isSuccessful() && remote.body() != null) {
+                        APIService.BackendListing r = remote.body();
+                        CropListing listing = fromRemote(r);
+                        addListingToCache(listing); persistMarketplaceData(); notifyNewListing(listing);
+                        callback.onListingCreated(listing.listingId); return;
+                    }
+                    if (remote.code() == 401) { callback.onListingError("सत्र समाप्त हो गया है, कृपया फिर लॉगिन करें"); return; }
+                }
                 
                 // Create new listing
                 CropListing listing = new CropListing(
@@ -458,13 +499,24 @@ public class MarketplaceService {
                 Log.d(TAG, "Creating buy request for buyer: " + buyerId + " in " + state);
                 
                 UserProfile buyer = userProfiles.get(buyerId);
-                if (buyer == null) {
+                String token = authStore.getString("auth_token", null);
+                if (buyer == null && token == null) {
                     callback.onBuyRequestError("User profile not found");
                     return;
                 }
                 
-                // Simulate network delay
-                Thread.sleep(800);
+                if (token != null) {
+                    Response<APIService.BackendBuyRequest> remote = apiService.backend().createBuyRequest(
+                            "Bearer " + token,
+                            new APIService.BuyRequest(cropName, requiredQuantity, "quintal", maxPricePerUnit, location, state)
+                    ).execute();
+                    if (remote.isSuccessful() && remote.body() != null) {
+                        BuyRequest request = fromRemote(remote.body());
+                        addBuyRequestToCache(request); persistMarketplaceData(); notifyNewBuyRequest(request);
+                        callback.onBuyRequestCreated(request.requestId); return;
+                    }
+                    if (remote.code() == 401 || remote.code() == 403) { callback.onBuyRequestError("इस खाते को खरीद अनुरोध की अनुमति नहीं है"); return; }
+                }
                 
                 // Create new buy request
                 BuyRequest request = new BuyRequest(
@@ -572,14 +624,68 @@ public class MarketplaceService {
         }
     }
 
+    private void addListingToCache(CropListing listing) {
+        if (listing == null || listing.state == null) return;
+        List<CropListing> items = listingsCache.computeIfAbsent(listing.state.toLowerCase(), k -> new ArrayList<>());
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).listingId.equals(listing.listingId)) { items.set(i, listing); return; }
+        }
+        items.add(listing);
+    }
+
+    private void addBuyRequestToCache(BuyRequest request) {
+        if (request == null || request.state == null) return;
+        List<BuyRequest> items = buyRequestsCache.computeIfAbsent(request.state.toLowerCase(), k -> new ArrayList<>());
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).requestId.equals(request.requestId)) { items.set(i, request); return; }
+        }
+        items.add(request);
+    }
+
+    private CropListing fromRemote(APIService.BackendListing remote) {
+        long timestamp = System.currentTimeMillis();
+        return new CropListing(remote.id, remote.farmerId, remote.cropName, remote.quantity,
+                remote.unit, remote.quality, remote.pricePerUnit, remote.location, remote.state,
+                remote.description, remote.status, timestamp);
+    }
+
+    private BuyRequest fromRemote(APIService.BackendBuyRequest remote) {
+        return new BuyRequest(remote.id, remote.buyerId, remote.cropName, remote.quantity,
+                remote.unit, remote.maxPricePerUnit, remote.location, remote.state,
+                remote.status, System.currentTimeMillis());
+    }
+
+    private void syncRemoteListings(String state, String crop) {
+        try {
+            Response<List<APIService.BackendListing>> response = apiService.backend()
+                    .getListings(state == null || state.isEmpty() ? null : state, crop == null || crop.isEmpty() ? null : crop)
+                    .execute();
+            if (response.isSuccessful() && response.body() != null) {
+                for (APIService.BackendListing item : response.body()) addListingToCache(fromRemote(item));
+                persistMarketplaceData();
+            }
+        } catch (Exception e) { Log.d(TAG, "Using cached listings while offline", e); }
+    }
+
+    private void syncRemoteBuyRequests() {
+        String token = authStore.getString("auth_token", null);
+        if (token == null) return;
+        try {
+            Response<List<APIService.BackendBuyRequest>> response = apiService.backend()
+                    .getBuyRequests("Bearer " + token).execute();
+            if (response.isSuccessful() && response.body() != null) {
+                for (APIService.BackendBuyRequest item : response.body()) addBuyRequestToCache(fromRemote(item));
+                persistMarketplaceData();
+            }
+        } catch (Exception e) { Log.d(TAG, "Using cached buy requests while offline", e); }
+    }
+
     // Enhanced data retrieval methods
     public void getCropListings(String cropFilter, String stateFilter, String districtFilter, MarketplaceCallback callback) {
         executorService.execute(() -> {
             try {
                 Log.d(TAG, "Fetching crop listings with filters: " + cropFilter + ", " + stateFilter + ", " + districtFilter);
-                
-                // Simulate network delay
-                Thread.sleep(600);
+                syncRemoteListings(stateFilter, cropFilter);
                 
                 List<CropListing> allListings = new ArrayList<>();
                 
@@ -630,9 +736,7 @@ public class MarketplaceService {
         executorService.execute(() -> {
             try {
                 Log.d(TAG, "Fetching buy requests with filters: " + stateFilter + ", " + cropFilter);
-                
-                // Simulate network delay
-                Thread.sleep(500);
+                syncRemoteBuyRequests();
                 
                 List<BuyRequest> allRequests = new ArrayList<>();
                 

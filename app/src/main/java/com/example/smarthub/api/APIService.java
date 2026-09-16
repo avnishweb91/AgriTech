@@ -12,6 +12,8 @@ import retrofit2.http.GET;
 import retrofit2.http.Body;
 import retrofit2.http.POST;
 import retrofit2.http.Query;
+import retrofit2.http.Header;
+import com.google.gson.annotations.SerializedName;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -31,6 +33,18 @@ public class APIService {
 
         @POST("auth/verify-otp")
         Call<AuthResponse> verifyOtp(@Body OtpVerifyRequest request);
+
+        @GET("listings")
+        Call<List<BackendListing>> getListings(@Query("state") String state, @Query("crop") String crop);
+
+        @POST("listings")
+        Call<BackendListing> createListing(@Header("Authorization") String authorization, @Body ListingRequest request);
+
+        @GET("buy-requests")
+        Call<List<BackendBuyRequest>> getBuyRequests(@Header("Authorization") String authorization);
+
+        @POST("buy-requests")
+        Call<BackendBuyRequest> createBuyRequest(@Header("Authorization") String authorization, @Body BuyRequest request);
     }
 
     public static class OtpRequest {
@@ -45,6 +59,38 @@ public class APIService {
     }
 
     public static class BasicResponse { public boolean ok; }
+
+    public static class ListingRequest {
+        public String cropName; public double quantity; public String unit; public String quality;
+        public double pricePerUnit; public String location; public String state; public String description;
+        public ListingRequest(String cropName, double quantity, String unit, String quality, double pricePerUnit,
+                              String location, String state, String description) {
+            this.cropName = cropName; this.quantity = quantity; this.unit = unit; this.quality = quality;
+            this.pricePerUnit = pricePerUnit; this.location = location; this.state = state; this.description = description;
+        }
+    }
+
+    public static class BuyRequest {
+        public String cropName; public double quantity; public String unit; public double maxPricePerUnit;
+        public String location; public String state;
+        public BuyRequest(String cropName, double quantity, String unit, double maxPricePerUnit, String location, String state) {
+            this.cropName = cropName; this.quantity = quantity; this.unit = unit; this.maxPricePerUnit = maxPricePerUnit;
+            this.location = location; this.state = state;
+        }
+    }
+
+    public static class BackendListing {
+        public String id; @SerializedName("farmer_id") public String farmerId; @SerializedName("crop_name") public String cropName;
+        public double quantity; public String unit; public String quality; @SerializedName("price_per_unit") public double pricePerUnit;
+        public String location; public String state; public String description; public String status;
+        @SerializedName("created_at") public String createdAt;
+    }
+
+    public static class BackendBuyRequest {
+        public String id; @SerializedName("buyer_id") public String buyerId; @SerializedName("crop_name") public String cropName;
+        public double quantity; public String unit; @SerializedName("max_price_per_unit") public double maxPricePerUnit;
+        public String location; public String state; public String status; @SerializedName("created_at") public String createdAt;
+    }
 
     public static class AuthResponse {
         public String token;
