@@ -25,6 +25,11 @@
         android:label="@string/nav_marketplace" />
 
     <fragment
+        android:id="@+id/navigation_cold_storage"
+        android:name="com.example.smarthub.fragments.ColdStorageFragment"
+        android:label="@string/nav_cold_storage" />
+
+    <fragment
         android:id="@+id/navigation_profile"
         android:name="com.example.smarthub.fragments.ProfileFragment"
         android:label="@string/nav_profile" />

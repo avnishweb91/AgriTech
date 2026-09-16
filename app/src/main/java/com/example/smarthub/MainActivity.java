@@ -118,6 +118,7 @@ public class MainActivity extends AppCompatActivity {
                         R.id.navigation_disease,
                         R.id.navigation_prices,
                         R.id.navigation_marketplace,
+                        R.id.navigation_cold_storage,
                         R.id.navigation_profile
                     ).build();
                     
@@ -182,6 +183,12 @@ public class MainActivity extends AppCompatActivity {
                         .replace(R.id.nav_host_fragment, new com.example.smarthub.fragments.ProfileFragment())
                         .commit();
                     if (toolbar != null) toolbar.setTitle(R.string.nav_profile);
+                    return true;
+                } else if (itemId == R.id.navigation_cold_storage) {
+                    getSupportFragmentManager().beginTransaction()
+                        .replace(R.id.nav_host_fragment, new com.example.smarthub.fragments.ColdStorageFragment())
+                        .commit();
+                    if (toolbar != null) toolbar.setTitle(R.string.nav_cold_storage);
                     return true;
                 }
                 return false;

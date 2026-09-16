@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey;
 @Entity(tableName = "cold_storage_lots")
 public class ColdStorageLotEntity {
     @PrimaryKey(autoGenerate = true) public long id;
+    public String remoteId;
     public String ownerId;
     public String cropName;
     public String cropNameHindi;

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="16dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="कोल्ड स्टोरेज ट्रैकिंग" android:textSize="24sp" android:textStyle="bold" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="ऑफ़लाइन भी लॉट दर्ज करें; इंटरनेट मिलने पर Railway से सिंक होगा।" android:paddingBottom="12dp" />
+        <EditText android:id="@+id/cold_crop" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="फसल का नाम" />
+        <EditText android:id="@+id/cold_quantity" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="मात्रा (क्विंटल)" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/cold_storage_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="स्टोरेज का नाम" />
+        <EditText android:id="@+id/cold_chamber" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="चैंबर कोड (वैकल्पिक)" />
+        <EditText android:id="@+id/cold_temperature" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="तापमान °C" android:inputType="numberDecimal|numberSigned" />
+        <Button android:id="@+id/cold_save" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="लॉट सहेजें" />
+        <TextView android:id="@+id/cold_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="अभी कोई लॉट नहीं है" android:paddingTop="16dp" />
+        <LinearLayout android:id="@+id/cold_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+    </LinearLayout>
+</ScrollView>

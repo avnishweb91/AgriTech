@@ -24,7 +24,7 @@ import com.example.smarthub.database.entities.SupplyChainEventEntity;
         ColdStorageLotEntity.class,
         SupplyChainEventEntity.class
     },
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 public abstract class AppDatabase extends RoomDatabase {
@@ -37,6 +37,11 @@ public abstract class AppDatabase extends RoomDatabase {
         public void migrate(@NonNull androidx.sqlite.db.SupportSQLiteDatabase database) {
             database.execSQL("CREATE TABLE IF NOT EXISTS cold_storage_lots (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, ownerId TEXT, cropName TEXT, cropNameHindi TEXT, quantity REAL NOT NULL, unit TEXT, storageName TEXT, chamberCode TEXT, temperatureCelsius REAL NOT NULL, status TEXT, storedAt INTEGER NOT NULL, expectedDispatchAt INTEGER NOT NULL, syncState TEXT, updatedAt INTEGER NOT NULL)");
             database.execSQL("CREATE TABLE IF NOT EXISTS supply_chain_events (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, lotId TEXT, eventType TEXT, note TEXT, latitude REAL NOT NULL, longitude REAL NOT NULL, occurredAt INTEGER NOT NULL, syncState TEXT)");
+        }
+    };
+    private static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override public void migrate(@NonNull androidx.sqlite.db.SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE cold_storage_lots ADD COLUMN remoteId TEXT");
         }
     };
     
@@ -53,7 +58,7 @@ public abstract class AppDatabase extends RoomDatabase {
                         AppDatabase.class,
                         DATABASE_NAME
                     )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build();
                 }
             }

@@ -21,6 +21,8 @@ public interface SupplyChainDao {
     List<SupplyChainEventEntity> getPendingEvents();
     @Query("UPDATE cold_storage_lots SET syncState = :state WHERE id = :id")
     void updateLotSyncState(long id, String state);
+    @Query("UPDATE cold_storage_lots SET remoteId = :remoteId, syncState = :state WHERE id = :id")
+    void updateLotRemoteId(long id, String remoteId, String state);
     @Query("UPDATE supply_chain_events SET syncState = :state WHERE id = :id")
     void updateEventSyncState(long id, String state);
 }

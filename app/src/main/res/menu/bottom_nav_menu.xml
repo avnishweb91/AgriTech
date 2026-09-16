@@ -19,6 +19,11 @@
         android:id="@+id/navigation_marketplace"
         android:icon="@drawable/ic_marketplace"
         android:title="@string/nav_marketplace" />
+
+    <item
+        android:id="@+id/navigation_cold_storage"
+        android:icon="@drawable/ic_view"
+        android:title="@string/nav_cold_storage" />
     
     <item
         android:id="@+id/navigation_profile"

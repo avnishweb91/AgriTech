@@ -45,6 +45,15 @@ public class APIService {
 
         @POST("buy-requests")
         Call<BackendBuyRequest> createBuyRequest(@Header("Authorization") String authorization, @Body BuyRequest request);
+
+        @GET("cold-storage/lots")
+        Call<List<BackendColdStorageLot>> getColdStorageLots(@Header("Authorization") String authorization);
+
+        @POST("cold-storage/lots")
+        Call<BackendColdStorageLot> createColdStorageLot(@Header("Authorization") String authorization, @Body ColdStorageLotRequest request);
+
+        @POST("cold-storage/lots/{lotId}/events")
+        Call<BasicResponse> addColdStorageEvent(@Header("Authorization") String authorization, @retrofit2.http.Path("lotId") String lotId, @Body SupplyChainEventRequest request);
     }
 
     public static class OtpRequest {
@@ -77,6 +86,28 @@ public class APIService {
             this.cropName = cropName; this.quantity = quantity; this.unit = unit; this.maxPricePerUnit = maxPricePerUnit;
             this.location = location; this.state = state;
         }
+    }
+
+    public static class ColdStorageLotRequest {
+        public String cropName; public double quantity; public String unit; public String storageName;
+        public String chamberCode; public double temperatureC; public String status;
+        public ColdStorageLotRequest(String cropName, double quantity, String unit, String storageName,
+                                     String chamberCode, double temperatureC, String status) {
+            this.cropName = cropName; this.quantity = quantity; this.unit = unit; this.storageName = storageName;
+            this.chamberCode = chamberCode; this.temperatureC = temperatureC; this.status = status;
+        }
+    }
+
+    public static class SupplyChainEventRequest {
+        public String eventType; public String note;
+        public SupplyChainEventRequest(String eventType, String note) { this.eventType = eventType; this.note = note; }
+    }
+
+    public static class BackendColdStorageLot {
+        public String id; @SerializedName("owner_id") public String ownerId; @SerializedName("crop_name") public String cropName;
+        public double quantity; public String unit; @SerializedName("storage_name") public String storageName;
+        @SerializedName("chamber_code") public String chamberCode; @SerializedName("temperature_c") public double temperatureC;
+        public String status; @SerializedName("created_at") public String createdAt; @SerializedName("updated_at") public String updatedAt;
     }
 
     public static class BackendListing {
