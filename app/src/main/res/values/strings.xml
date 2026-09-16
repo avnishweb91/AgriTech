@@ -41,8 +41,8 @@
     <string name="beta_tag">बीटा</string>
     
     <!-- Crop Disease Detection -->
-    <string name="disease_title">एआई फसल रोग पहचान</string>
-    <string name="disease_subtitle">अपने खेत की पत्ती/फसल की साफ़ फोटो अपलोड करें</string>
+    <string name="disease_title">फसल की फोटो जाँच</string>
+    <string name="disease_subtitle">फोटो चुनें। विश्वसनीय रोग-पहचान मॉडल उपलब्ध होने तक ऐप निदान या दवा की सलाह नहीं देगा।</string>
     <string name="upload_photo">फोटो अपलोड करें</string>
     <string name="analyze">विश्लेषण करें</string>
     <string name="photo_tip">सुझाव: साफ़ रोशनी, पास से, धुंधलापन न हो।</string>

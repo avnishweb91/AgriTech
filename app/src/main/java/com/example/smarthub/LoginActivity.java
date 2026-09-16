@@ -10,6 +10,8 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.RadioGroup;
+import android.widget.RadioButton;
 
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.smarthub.auth.AuthenticationService;
@@ -22,6 +24,7 @@ public class LoginActivity extends AppCompatActivity {
     private Button btnSendOTP, btnVerifyOTP;
     private MaterialCardView otpLayout;
     private TextView tvMobileDisplay;
+    private RadioGroup roleGroup;
     
     private AuthenticationService authService;
     private String phoneNumber;
@@ -44,6 +47,7 @@ public class LoginActivity extends AppCompatActivity {
         btnVerifyOTP = findViewById(R.id.btn_verify_otp);
         otpLayout = findViewById(R.id.otp_layout);
         tvMobileDisplay = findViewById(R.id.tv_mobile_display);
+        roleGroup = findViewById(R.id.role_group);
     }
     
     private void setupAuthService() {
@@ -154,6 +158,10 @@ public class LoginActivity extends AppCompatActivity {
         // Show loading state
         btnVerifyOTP.setEnabled(false);
         btnVerifyOTP.setText("सत्यापित कर रहा है...");
+        int selectedRoleId = roleGroup.getCheckedRadioButtonId();
+        RadioButton selectedRole = findViewById(selectedRoleId);
+        String role = selectedRole == null ? "farmer" : String.valueOf(selectedRole.getTag());
+        authService.setSelectedRole(role);
         
         // Verify OTP using AuthenticationService
         authService.verifyPhoneNumberWithCode(otp);

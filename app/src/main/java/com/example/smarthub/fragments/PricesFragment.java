@@ -392,7 +392,7 @@ public class PricesFragment extends Fragment {
                 public void onPriceError(String error) {
                     requireActivity().runOnUiThread(() -> {
                         Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show();
-                        showDemoPrices();
+                        showPricesUnavailable();
                     });
                 }
             });
@@ -414,7 +414,7 @@ public class PricesFragment extends Fragment {
             
         } else {
             Log.e(TAG, "MandiPriceService is null");
-            showDemoPrices();
+            showPricesUnavailable();
         }
     }
     
@@ -622,79 +622,14 @@ public class PricesFragment extends Fragment {
         }
     }
     
-    private void showDemoPrices() {
-        Log.d(TAG, "Showing demo mandi prices for district: " + selectedDistrict);
-        
-        // Create demo prices based on selected district
-        List<MandiPriceService.MandiPrice> demoPrices = new ArrayList<>();
-        
-        // Get district-specific mandis
-        List<String> districtMandis = new ArrayList<>();
-        if (selectedLocation.equalsIgnoreCase("बिहार (Bihar)")) {
-            if (selectedDistrict.equalsIgnoreCase("Patna")) {
-                districtMandis = Arrays.asList("Patna City", "Phulwari", "Bakhtiarpur", "Barh", "Fatuha");
-            } else if (selectedDistrict.equalsIgnoreCase("Ara")) {
-                districtMandis = Arrays.asList("Ara City", "Bikramganj", "Piro", "Sandesh", "Tarari");
-            } else if (selectedDistrict.equalsIgnoreCase("Bhagalpur")) {
-                districtMandis = Arrays.asList("Bhagalpur City", "Kahalgaon", "Naugachhia", "Sultanganj", "Bihpur");
-            } else if (selectedDistrict.equalsIgnoreCase("Muzaffarpur")) {
-                districtMandis = Arrays.asList("Muzaffarpur City", "Motihari", "Sitamarhi", "Sheohar", "Vaishali");
-            } else if (selectedDistrict.equalsIgnoreCase("Gaya")) {
-                districtMandis = Arrays.asList("Gaya City", "Bodh Gaya", "Sherghati", "Tekari", "Fatehpur");
-            } else {
-                districtMandis = Arrays.asList(selectedDistrict + " City", selectedDistrict + " Market", selectedDistrict + " Mandi");
-            }
-        } else {
-            // Generic mandis for other states
-            districtMandis = Arrays.asList(selectedDistrict + " City", selectedDistrict + " Market", selectedDistrict + " Mandi", 
-                selectedDistrict + " Industrial Area", selectedDistrict + " Agricultural Market");
-        }
-        
-        // Generate prices for each mandi in the district
-        for (int i = 0; i < districtMandis.size(); i++) {
-            String mandiName = districtMandis.get(i);
-            String mandiNameHindi = mandiName;
-            
-            // Generate price variation based on mandi location and demand
-            double basePrice = getBasePriceForCrop(selectedCrop);
-            double priceVariation = 0.8 + (Math.random() * 0.4); // ±20% variation
-            double currentPrice = basePrice * priceVariation;
-            double previousPrice = currentPrice * (0.9 + Math.random() * 0.2);
-            
-            // Quality grades
-            String[] qualities = {"A Grade", "B Grade", "C Grade"};
-            String quality = qualities[(int)(Math.random() * qualities.length)];
-            
-            MandiPriceService.MandiPrice price = new MandiPriceService.MandiPrice(
-                mandiName, mandiNameHindi, selectedCrop, selectedCrop, 
-                currentPrice, "क्विंटल", quality, previousPrice
-            );
-            demoPrices.add(price);
-        }
-        
-        displayMandiPrices(demoPrices);
-        updateLastUpdated();
-        
-        // Calculate base price for trend
-        double basePrice = getBasePriceForCrop(selectedCrop);
-        
-        // Show demo trend
-        MandiPriceService.PriceTrend demoTrend = new MandiPriceService.PriceTrend(
-            selectedCrop, selectedCrop, "rising", "बढ़ रहा है",
-            basePrice, 15.0, "मूल्य बढ़ रहे हैं, बिक्री के लिए उपयुक्त समय", "मूल्य बढ़ रहे हैं, बिक्री के लिए उपयुक्त समय"
-        );
-        displayPriceTrends(demoTrend);
-    }
-    
-    private double getBasePriceForCrop(String cropName) {
-        switch (cropName.toLowerCase()) {
-            case "गेहूँ (wheat)": return 1900 + Math.random() * 200;
-            case "धान (rice)": return 2100 + Math.random() * 300;
-            case "मक्का (maize)": return 1800 + Math.random() * 250;
-            case "आलू (potato)": return 1200 + Math.random() * 400;
-            case "प्याज़ (onion)": return 2500 + Math.random() * 500;
-            case "टमाटर (tomato)": return 3000 + Math.random() * 800;
-            default: return 2000 + Math.random() * 300;
+    private void showPricesUnavailable() {
+        if (pricesContainer != null) {
+            pricesContainer.removeAllViews();
+            TextView message = new TextView(requireContext());
+            message.setText("लाइव सरकारी मंडी भाव अभी उपलब्ध नहीं हैं। कोई अनुमानित भाव नहीं दिखाया जा रहा है।");
+            message.setTextSize(16);
+            message.setPadding(24, 32, 24, 32);
+            pricesContainer.addView(message);
         }
     }
     
@@ -705,7 +640,7 @@ public class PricesFragment extends Fragment {
                 getCurrentLocationAndPrices();
             } else {
                 Toast.makeText(requireContext(), "स्थान की अनुमति आवश्यक है मंडी भाव के लिए", Toast.LENGTH_LONG).show();
-                showDemoPrices();
+                showPricesUnavailable();
             }
         }
     }

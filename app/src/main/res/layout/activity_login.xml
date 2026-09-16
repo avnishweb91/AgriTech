@@ -88,6 +88,21 @@
 
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="मैं ऐप का उपयोग किस रूप में करूंगा?"
+                    android:textStyle="bold" />
+                <RadioGroup
+                    android:id="@+id/role_group"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <RadioButton android:id="@+id/role_farmer" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:text="किसान" android:tag="farmer" />
+                    <RadioButton android:id="@+id/role_buyer" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="खरीदार" android:tag="buyer" />
+                    <RadioButton android:id="@+id/role_processor" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="फूड प्रोसेसर / होटल" android:tag="processor" />
+                </RadioGroup>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_send_otp"
                     android:layout_width="match_parent"

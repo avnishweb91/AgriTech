@@ -26,6 +26,7 @@ public class APIService {
     private final WeatherAPI weatherAPI;
     private final MandiAPI mandiAPI;
     private final BackendAPI backendAPI;
+    private final OpenMeteoAPI openMeteoAPI;
 
     public interface BackendAPI {
         @POST("auth/request-otp")
@@ -42,6 +43,22 @@ public class APIService {
 
         @GET("buy-requests")
         Call<List<BackendBuyRequest>> getBuyRequests(@Header("Authorization") String authorization);
+
+        @GET("mandi/prices")
+        Call<MandiBackendResponse> getMandiPrices(@Query("commodity") String commodity, @Query("state") String state, @Query("district") String district);
+
+        @GET("chat/messages")
+        Call<List<ChatMessage>> getChatMessages(@Header("Authorization") String authorization,
+                @Query("otherUserId") String otherUserId, @Query("listingId") String listingId);
+
+        @POST("chat/messages")
+        Call<ChatMessage> sendChatMessage(@Header("Authorization") String authorization, @Body ChatMessageRequest request);
+
+        @POST("payments/orders")
+        Call<PaymentOrder> createPaymentOrder(@Header("Authorization") String authorization, @Body PaymentOrderRequest request);
+
+        @POST("payments/verify")
+        Call<PaymentVerification> verifyPayment(@Header("Authorization") String authorization, @Body PaymentVerificationRequest request);
 
         @POST("buy-requests")
         Call<BackendBuyRequest> createBuyRequest(@Header("Authorization") String authorization, @Body BuyRequest request);
@@ -64,7 +81,8 @@ public class APIService {
     public static class OtpVerifyRequest {
         public final String phone;
         public final String code;
-        public OtpVerifyRequest(String phone, String code) { this.phone = phone; this.code = code; }
+        public final String role;
+        public OtpVerifyRequest(String phone, String code, String role) { this.phone = phone; this.code = code; this.role = role; }
     }
 
     public static class BasicResponse { public boolean ok; }
@@ -123,6 +141,47 @@ public class APIService {
         public String location; public String state; public String status; @SerializedName("created_at") public String createdAt;
     }
 
+    public static class MandiBackendResponse {
+        public String source;
+        public String fetchedAt;
+        public List<MandiRecord> records;
+    }
+    public static class MandiRecord {
+        public String state;
+        public String district;
+        public String market;
+        public String commodity;
+        public String variety;
+        @SerializedName("min_price") public String minPrice;
+        @SerializedName("max_price") public String maxPrice;
+        @SerializedName("modal_price") public String modalPrice;
+    }
+    public static class ChatMessageRequest {
+        public String otherUserId; public String listingId; public String body;
+        public ChatMessageRequest(String otherUserId, String listingId, String body) {
+            this.otherUserId = otherUserId; this.listingId = listingId; this.body = body;
+        }
+    }
+    public static class ChatMessage {
+        public String id; @SerializedName("listing_id") public String listingId;
+        @SerializedName("sender_id") public String senderId; @SerializedName("recipient_id") public String recipientId;
+        public String body; @SerializedName("created_at") public String createdAt;
+    }
+    public static class PaymentOrderRequest {
+        public String listingId; public double quantity;
+        public PaymentOrderRequest(String listingId, double quantity) { this.listingId = listingId; this.quantity = quantity; }
+    }
+    public static class PaymentOrder {
+        public String keyId; public String orderId; public int amount; public String currency; public String error;
+    }
+    public static class PaymentVerificationRequest {
+        public String orderId; public String paymentId; public String signature;
+        public PaymentVerificationRequest(String orderId, String paymentId, String signature) {
+            this.orderId = orderId; this.paymentId = paymentId; this.signature = signature;
+        }
+    }
+    public static class PaymentVerification { public boolean ok; public String status; public String error; }
+
     public static class AuthResponse {
         public String token;
         public User user;
@@ -160,7 +219,26 @@ public class APIService {
             @Query("filters") String filters
         );
     }
-    
+
+    public interface OpenMeteoAPI {
+        @GET("v1/forecast?current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m&daily=temperature_2m_max,weather_code&timezone=auto")
+        Call<OpenMeteoResponse> current(@Query("latitude") double latitude, @Query("longitude") double longitude, @Query("forecast_days") int forecastDays);
+    }
+    public static class OpenMeteoResponse { public CurrentWeather current; public DailyWeather daily; }
+    public static class CurrentWeather {
+        @SerializedName("temperature_2m") public double temperature;
+        @SerializedName("relative_humidity_2m") public int humidity;
+        @SerializedName("weather_code") public int weatherCode;
+        @SerializedName("wind_speed_10m") public double windSpeed;
+        @SerializedName("wind_direction_10m") public int windDirection;
+        public String time;
+    }
+    public static class DailyWeather {
+        public List<String> time;
+        @SerializedName("temperature_2m_max") public List<Double> maxTemperature;
+        @SerializedName("weather_code") public List<Integer> weatherCode;
+    }
+
     public APIService(Context context) {
         // Initialize Weather API
         Retrofit weatherRetrofit = new Retrofit.Builder()
@@ -181,9 +259,13 @@ public class APIService {
             .addConverterFactory(GsonConverterFactory.create())
             .build();
         backendAPI = backendRetrofit.create(BackendAPI.class);
+        Retrofit openMeteoRetrofit = new Retrofit.Builder().baseUrl("https://api.open-meteo.com/")
+            .addConverterFactory(GsonConverterFactory.create()).build();
+        openMeteoAPI = openMeteoRetrofit.create(OpenMeteoAPI.class);
     }
 
     public BackendAPI backend() { return backendAPI; }
+    public OpenMeteoAPI openMeteo() { return openMeteoAPI; }
     
     public void getRealWeatherData(double lat, double lon, String apiKey, WeatherCallback callback) {
         // Use BuildConfig for API key if not provided

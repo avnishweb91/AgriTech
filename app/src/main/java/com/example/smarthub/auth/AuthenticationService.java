@@ -30,6 +30,7 @@ public class AuthenticationService {
     private final SharedPreferences preferences;
     private String pendingPhone;
     private String pendingOtp;
+    private String selectedRole = "farmer";
     private final APIService apiService;
     private AuthenticationCallback authCallback;
 
@@ -55,6 +56,9 @@ public class AuthenticationService {
     }
 
     public void setAuthenticationCallback(AuthenticationCallback callback) { authCallback = callback; }
+    public void setSelectedRole(String role) {
+        if ("farmer".equals(role) || "buyer".equals(role) || "processor".equals(role)) selectedRole = role;
+    }
 
     /** Requests a real SMS through the Railway API and Twilio Verify. */
     public void startPhoneNumberVerification(String phoneNumber, Activity activity) {
@@ -81,7 +85,7 @@ public class AuthenticationService {
         if (pendingPhone == null) {
             if (authCallback != null) authCallback.onAuthFailure("पहले OTP भेजें");
         } else {
-            apiService.backend().verifyOtp(new APIService.OtpVerifyRequest(pendingPhone, code)).enqueue(new Callback<APIService.AuthResponse>() {
+            apiService.backend().verifyOtp(new APIService.OtpVerifyRequest(pendingPhone, code, selectedRole)).enqueue(new Callback<APIService.AuthResponse>() {
                 @Override public void onResponse(@NonNull Call<APIService.AuthResponse> call, @NonNull Response<APIService.AuthResponse> response) {
                     APIService.AuthResponse body = response.body();
                     if (response.isSuccessful() && body != null && body.token != null && body.user != null) {

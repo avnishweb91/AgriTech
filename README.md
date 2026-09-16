@@ -1,7 +1,7 @@
 # 🌾 **Agri-Tech Smart Hub** - Complete Android Application
 
 ## 📱 **Overview**
-Agri-Tech Smart Hub is a comprehensive Android mobile application designed to solve critical problems faced by farmers in India. The app provides AI-based crop disease detection, real-time mandi prices, direct buyer-seller marketplace, weather alerts, and government scheme information - all in Hindi vernacular UI.
+Agri-Tech Smart Hub is an Android farming and marketplace app with Hindi-first screens, offline storage, phone OTP sign-in, weather, mandi-price lookup, and farmer/buyer/processor marketplace roles.
 
 ## 🎯 **Problem Statement**
 Farmers often face significant losses due to:
@@ -21,32 +21,28 @@ A mobile-first Android application that combines:
 
 ## ✨ **Key Features**
 
-### 🔬 **AI-Based Crop Disease Detection**
-- Photo upload and analysis
-- Disease identification with confidence scores
-- Treatment and prevention recommendations
-- Nearby agricultural store locations
-- Image compression and processing
+### 🔬 **Crop health photos**
+- Capture or select a crop photo
+- Automated diagnosis is intentionally unavailable until a validated crop-specific model is configured. The app does not guess a disease or pesticide from image colors.
 
-### 📊 **Live Mandi Prices**
-- Real-time price updates for major crops
-- Location-based mandi information
-- Price trends and analysis
-- Crop-specific filtering
-- Integration with government data APIs
+### 📊 **Mandi Prices**
+- Current AGMARKNET records through data.gov.in when the backend API key is configured
+- Clear unavailable state if the official source is not configured
+- Historical price trends are not currently provided
 
 ### 🤝 **Direct Buyer-Seller Marketplace**
 - Crop listing and management
 - Buy requests and matching
 - Location and state-based filtering
 - Market statistics and insights
-- UPI payment integration
+- Buyer/processor checkout through Razorpay (requires server credentials)
+- Persistent chat between signed-in marketplace users
 
 ### 🌤️ **Weather Alerts & Farming Advice**
 - Current weather conditions
 - 5-day weather forecasts
 - Farming-specific alerts (sowing, harvesting)
-- Location-based weather data
+- Location-based current conditions and forecast from Open-Meteo
 - Push notifications for critical alerts
 
 ### 🏛️ **Government Schemes**
@@ -111,7 +107,25 @@ app/
 └── app/build.gradle                 # Android dependencies and build configuration
 ```
 
-## 🚀 **Production Features Implemented**
+## 🚀 Production setup and current integration status
+
+The Android app builds with `./gradlew :app:assembleDebug`. The API runs from `server/` and requires PostgreSQL. On Railway, configure these variables in the API service (never put secrets in the Android app):
+
+- `DATABASE_URL` — Railway PostgreSQL connection string
+- `JWT_SECRET` — long random secret
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` — real OTP delivery
+- `DATA_GOV_IN_API_KEY` — enables official mandi prices; without it the endpoint returns 503, not demo data
+- `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` — enables server-created checkout orders and server-side payment verification
+
+Weather uses Open-Meteo and does not require a key. Railway must deploy the Node API directory (`server`) and run its `npm start` command; `schema.sql` is applied on API startup. After setting variables or changing schema, redeploy and verify `/health`.
+
+Razorpay remains disabled until merchant onboarding and keys are complete. A crop-disease classifier is not included: production diagnosis requires a validated crop/disease model and field validation. Government data access, Razorpay onboarding, and a reliable disease model require external account/provider decisions and cannot be completed by source code alone. Do not present the photo screen as a medical-grade/agronomic diagnosis.
+
+The payment endpoints verify captured Razorpay payments, but order fulfillment, stock reservation, refunds, and payment-webhook reconciliation still need a production order-management workflow before accepting real customer payments.
+
+The Android app includes roles, real backend marketplace persistence, offline local records, weather integration, and chat/payment client flows. The current mandi endpoint provides current records only; historical trend analysis and fully automated synchronization of every offline domain still need implementation.
+
+## 🚀 **Feature status**
 
 ### ✅ **Completed Features**
 1. **User Authentication System**
@@ -130,15 +144,14 @@ app/
    - Room persistence for users, crops, weather, cold-storage lots, and supply-chain events
    - Explicit pending/synced states for future WorkManager synchronization
 
-4. **Payment Integration**
-   - UPI payment processing
-   - Google Pay integration
-   - Transaction management
-   - Payment callbacks
+4. **Payments**
+   - Razorpay order creation on the backend
+   - Signature and captured-payment verification on the backend
+   - Requires live merchant keys and deployment configuration
 
-5. **Real API Integration**
-   - Weather API (OpenWeatherMap)
-   - Mandi prices API (Data.gov.in)
+5. **External data integration**
+   - Current weather API (Open-Meteo)
+   - Mandi prices proxy (Data.gov.in; key required)
    - Government schemes
    - Data caching
 

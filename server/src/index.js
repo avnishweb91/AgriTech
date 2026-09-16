@@ -28,6 +28,23 @@ app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1'); res.json({ ok: true, service: 'agritech-api' });
 }));
 
+app.get('/mandi/prices', asyncRoute(async (req, res) => {
+  const apiKey = process.env.DATA_GOV_IN_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Official mandi-price API key is not configured', source: 'data.gov.in' });
+  const url = new URL('https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070');
+  url.searchParams.set('api-key', apiKey);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '100');
+  if (req.query.commodity) url.searchParams.set('filters[commodity]', String(req.query.commodity));
+  if (req.query.state) url.searchParams.set('filters[state]', String(req.query.state));
+  if (req.query.district) url.searchParams.set('filters[district]', String(req.query.district));
+  const upstream = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+  if (!upstream.ok) return res.status(502).json({ error: 'Official mandi-price source unavailable', source: 'data.gov.in' });
+  const data = await upstream.json();
+  res.set('Cache-Control', 'public, max-age=900');
+  res.json({ source: 'AGMARKNET via data.gov.in', fetchedAt: new Date().toISOString(), records: data.records || [] });
+}));
+
 app.post('/auth/request-otp', asyncRoute(async (req, res) => {
   const phone = String(req.body.phone || '').trim();
   if (!/^\+[1-9]\d{7,14}$/.test(phone)) return res.status(400).json({ error: 'Use E.164 phone format' });
@@ -38,11 +55,13 @@ app.post('/auth/request-otp', asyncRoute(async (req, res) => {
 
 app.post('/auth/verify-otp', asyncRoute(async (req, res) => {
   const phone = String(req.body.phone || '').trim(); const code = String(req.body.code || '').trim();
+  const requestedRole = String(req.body.role || 'farmer').trim();
+  if (!['farmer', 'buyer', 'processor'].includes(requestedRole)) return res.status(400).json({ error: 'Invalid account role' });
   if (!twilioClient || !process.env.TWILIO_VERIFY_SERVICE_SID) return res.status(503).json({ error: 'OTP service is not configured' });
   const result = await twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verificationChecks.create({ to: phone, code });
   if (result.status !== 'approved') return res.status(401).json({ error: 'Invalid OTP' });
   const id = crypto.randomUUID();
-  const user = (await pool.query(`INSERT INTO users(id, phone) VALUES($1,$2) ON CONFLICT(phone) DO UPDATE SET phone=EXCLUDED.phone RETURNING id,phone,role`, [id, phone])).rows[0];
+  const user = (await pool.query(`INSERT INTO users(id, phone, role) VALUES($1,$2,$3) ON CONFLICT(phone) DO UPDATE SET role=EXCLUDED.role RETURNING id,phone,role`, [id, phone, requestedRole])).rows[0];
   res.json({ token: jwt.sign({ sub: user.id, phone: user.phone, role: user.role }, jwtSecret, { expiresIn: '30d' }), user });
 }));
 
@@ -74,6 +93,69 @@ app.post('/cold-storage/lots/:lotId/events', auth, asyncRoute(async (req, res) =
   const lot = await pool.query('SELECT id FROM cold_storage_lots WHERE id=$1 AND owner_id=$2', [req.params.lotId, req.user.sub]);
   if (!lot.rowCount) return res.status(404).json({ error: 'Lot not found' });
   res.status(201).json((await pool.query(`INSERT INTO supply_chain_events(id,lot_id,event_type,note,latitude,longitude) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [crypto.randomUUID(), req.params.lotId, req.body.eventType, req.body.note, req.body.latitude, req.body.longitude])).rows[0]);
+}));
+
+app.get('/chat/messages', auth, asyncRoute(async (req, res) => {
+  const otherUserId = String(req.query.otherUserId || '');
+  const listingId = req.query.listingId ? String(req.query.listingId) : null;
+  if (!otherUserId) return res.status(400).json({ error: 'otherUserId is required' });
+  const rows = await pool.query(`SELECT id, listing_id, sender_id, recipient_id, body, created_at
+    FROM chat_messages WHERE listing_id IS NOT DISTINCT FROM $3::uuid
+    AND ((sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1))
+    ORDER BY created_at ASC LIMIT 300`, [req.user.sub, otherUserId, listingId]);
+  res.json(rows.rows);
+}));
+app.post('/chat/messages', auth, asyncRoute(async (req, res) => {
+  const recipientId = String(req.body.otherUserId || '');
+  const listingId = req.body.listingId ? String(req.body.listingId) : null;
+  const body = String(req.body.body || '').trim();
+  if (!recipientId || recipientId === req.user.sub || !body || body.length > 2000) return res.status(400).json({ error: 'Invalid chat message' });
+  const recipient = await pool.query('SELECT id FROM users WHERE id=$1', [recipientId]);
+  if (!recipient.rowCount) return res.status(404).json({ error: 'Recipient not found' });
+  const result = await pool.query(`INSERT INTO chat_messages(id,listing_id,sender_id,recipient_id,body)
+    VALUES($1,$2,$3,$4,$5) RETURNING id,listing_id,sender_id,recipient_id,body,created_at`,
+    [crypto.randomUUID(), listingId, req.user.sub, recipientId, body]);
+  res.status(201).json(result.rows[0]);
+}));
+
+const razorpayReady = () => process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
+const razorpayRequest = async (endpoint, method, body) => {
+  const credentials = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
+  const response = await fetch(`https://api.razorpay.com/v1${endpoint}`, {
+    method, headers: { Authorization: `Basic ${credentials}`, 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(12000)
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`Payment gateway error ${response.status}`);
+  return payload;
+};
+app.post('/payments/orders', auth, requireRole('buyer','processor'), asyncRoute(async (req, res) => {
+  if (!razorpayReady()) return res.status(503).json({ error: 'Payment gateway is not configured' });
+  const quantity = Number(req.body.quantity); const listingId = String(req.body.listingId || '');
+  if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Invalid quantity' });
+  const listing = await pool.query("SELECT id,farmer_id,quantity,price_per_unit,status FROM listings WHERE id=$1 AND status='active'", [listingId]);
+  if (listing.rowCount && listing.rows[0].farmer_id === req.user.sub) return res.status(403).json({ error: 'You cannot buy your own listing' });
+  if (!listing.rowCount || quantity > Number(listing.rows[0].quantity)) return res.status(400).json({ error: 'Listing unavailable or requested quantity exceeds supply' });
+  const amount = Math.round(Number(listing.rows[0].price_per_unit) * quantity * 100);
+  if (amount < 100 || !Number.isSafeInteger(amount)) return res.status(400).json({ error: 'Invalid payment amount' });
+  const order = await razorpayRequest('/orders', 'POST', { amount, currency: 'INR', receipt: crypto.randomUUID() });
+  await pool.query(`INSERT INTO payments(id,buyer_id,listing_id,quantity,amount_paise,gateway_order_id)
+    VALUES($1,$2,$3,$4,$5,$6)`, [crypto.randomUUID(), req.user.sub, listingId, quantity, amount, order.id]);
+  res.status(201).json({ keyId: process.env.RAZORPAY_KEY_ID, orderId: order.id, amount: order.amount, currency: order.currency });
+}));
+app.post('/payments/verify', auth, requireRole('buyer','processor'), asyncRoute(async (req, res) => {
+  if (!razorpayReady()) return res.status(503).json({ error: 'Payment gateway is not configured' });
+  const { orderId, paymentId, signature } = req.body;
+  if (!orderId || !paymentId || !signature) return res.status(400).json({ error: 'Payment verification fields required' });
+  const stored = await pool.query('SELECT * FROM payments WHERE gateway_order_id=$1 AND buyer_id=$2', [orderId, req.user.sub]);
+  if (!stored.rowCount) return res.status(404).json({ error: 'Order not found' });
+  const expected = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET).update(`${orderId}|${paymentId}`).digest();
+  let supplied; try { supplied = Buffer.from(signature, 'hex'); } catch { supplied = Buffer.alloc(0); }
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return res.status(401).json({ error: 'Invalid payment signature' });
+  const payment = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`, 'GET');
+  if (payment.order_id !== orderId || payment.status !== 'captured' || Number(payment.amount) !== Number(stored.rows[0].amount_paise)) return res.status(409).json({ error: 'Payment is not captured for this order' });
+  await pool.query("UPDATE payments SET gateway_payment_id=$1,status='paid',paid_at=now() WHERE gateway_order_id=$2", [paymentId, orderId]);
+  res.json({ ok: true, status: 'paid', orderId, paymentId });
 }));
 
 app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: 'Internal server error' }); });

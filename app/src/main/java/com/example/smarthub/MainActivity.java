@@ -12,11 +12,17 @@ import androidx.navigation.ui.NavigationUI;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.example.smarthub.api.APIService;
+import com.razorpay.PaymentData;
+import com.razorpay.PaymentResultWithDataListener;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements PaymentResultWithDataListener {
 
     private static final String TAG = "MainActivity";
     private NavController navController;
+    private final APIService apiService = new APIService(this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -213,5 +219,31 @@ public class MainActivity extends AppCompatActivity {
             return navController.navigateUp() || super.onSupportNavigateUp();
         }
         return super.onSupportNavigateUp();
+    }
+
+    @Override public void onPaymentSuccess(String paymentId, PaymentData paymentData) {
+        String orderId = paymentData.getOrderId();
+        String signature = paymentData.getSignature();
+        String token = getSharedPreferences("auth_prefs", MODE_PRIVATE).getString("auth_token", null);
+        String expectedOrder = getSharedPreferences("payment_state", MODE_PRIVATE).getString("pending_payment_order", null);
+        if (token == null || orderId == null || signature == null || !orderId.equals(expectedOrder)) {
+            android.widget.Toast.makeText(this, "भुगतान स्थिति सत्यापित नहीं हो सकी। सहायता से संपर्क करें।", android.widget.Toast.LENGTH_LONG).show(); return;
+        }
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> { try {
+            retrofit2.Response<APIService.PaymentVerification> response = apiService.backend()
+                    .verifyPayment("Bearer " + token, new APIService.PaymentVerificationRequest(orderId, paymentId, signature)).execute();
+            runOnUiThread(() -> {
+                getSharedPreferences("payment_state", MODE_PRIVATE).edit().remove("pending_payment_order").apply();
+                android.widget.Toast.makeText(this, response.isSuccessful() && response.body() != null && response.body().ok
+                        ? "भुगतान सफल और सत्यापित हुआ" : "भुगतान की पुष्टि नहीं हुई। डिलीवरी से पहले स्थिति जाँचें।", android.widget.Toast.LENGTH_LONG).show();
+            });
+        } catch (Exception e) { runOnUiThread(() -> android.widget.Toast.makeText(this, "भुगतान सत्यापन लंबित है। कृपया फिर जाँचें।", android.widget.Toast.LENGTH_LONG).show()); }
+        finally { executor.shutdown(); } });
+    }
+
+    @Override public void onPaymentError(int code, String response, PaymentData paymentData) {
+        getSharedPreferences("payment_state", MODE_PRIVATE).edit().remove("pending_payment_order").apply();
+        android.widget.Toast.makeText(this, "भुगतान पूरा नहीं हुआ; आप फिर कोशिश कर सकते हैं।", android.widget.Toast.LENGTH_LONG).show();
     }
 }

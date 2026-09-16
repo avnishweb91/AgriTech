@@ -4,6 +4,7 @@ import android.content.Context;
 import android.location.Location;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import com.example.smarthub.api.APIService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -16,6 +17,7 @@ public class WeatherService {
     private final ScheduledExecutorService scheduledExecutor;
     private final Context context;
     private final Random random;
+    private final APIService apiService;
 
     public interface WeatherCallback {
         void onWeatherUpdate(WeatherData weatherData);
@@ -75,6 +77,7 @@ public class WeatherService {
         this.executorService = Executors.newSingleThreadExecutor();
         this.scheduledExecutor = Executors.newScheduledThreadPool(1);
         this.random = new Random();
+        this.apiService = new APIService(context.getApplicationContext());
         
         // Start periodic weather updates
         startPeriodicUpdates();
@@ -85,17 +88,20 @@ public class WeatherService {
             try {
                 Log.d(TAG, "Fetching current weather for location: " + location.getLatitude() + ", " + location.getLongitude());
                 
-                // Simulate network delay
-                Thread.sleep(1000);
-                
-                // Generate realistic weather data based on location and time
-                WeatherData weatherData = generateWeatherData(location);
-                
+                retrofit2.Response<APIService.OpenMeteoResponse> response = apiService.openMeteo()
+                        .current(location.getLatitude(), location.getLongitude(), 1).execute();
+                if (!response.isSuccessful() || response.body() == null || response.body().current == null) {
+                    callback.onWeatherError("मौसम सेवा अभी उपलब्ध नहीं है"); return;
+                }
+                APIService.CurrentWeather current = response.body().current;
+                WeatherData weatherData = new WeatherData(current.temperature, current.humidity,
+                        condition(current.weatherCode), conditionHindi(current.weatherCode),
+                        current.windSpeed, direction(current.windDirection), 0);
                 callback.onWeatherUpdate(weatherData);
                 
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching weather: " + e.getMessage(), e);
-                callback.onWeatherError("मौसम जानकारी प्राप्त करने में त्रुटि: " + e.getMessage());
+                callback.onWeatherError("मौसम जानकारी नहीं मिल सकी। इंटरनेट कनेक्शन जाँचें।");
             }
         });
     }
@@ -105,19 +111,22 @@ public class WeatherService {
             try {
                 Log.d(TAG, "Fetching " + days + " day forecast for location: " + location.getLatitude() + ", " + location.getLongitude());
                 
-                // Simulate network delay
-                Thread.sleep(1500);
-                
-                // Generate forecast data
-                for (int i = 0; i < days; i++) {
-                    WeatherData forecastData = generateForecastData(location, i);
-                    callback.onWeatherUpdate(forecastData);
-                    Thread.sleep(200); // Small delay between forecasts
+                retrofit2.Response<APIService.OpenMeteoResponse> response = apiService.openMeteo()
+                        .current(location.getLatitude(), location.getLongitude(), Math.max(1, Math.min(days, 16))).execute();
+                if (!response.isSuccessful() || response.body() == null || response.body().daily == null) {
+                    callback.onWeatherError("पूर्वानुमान अभी उपलब्ध नहीं है"); return;
+                }
+                APIService.DailyWeather daily = response.body().daily;
+                int count = Math.min(days, daily.time == null ? 0 : daily.time.size());
+                for (int i = 0; i < count; i++) {
+                    double max = daily.maxTemperature != null && i < daily.maxTemperature.size() ? daily.maxTemperature.get(i) : 0;
+                    int code = daily.weatherCode != null && i < daily.weatherCode.size() ? daily.weatherCode.get(i) : 0;
+                    callback.onWeatherUpdate(new WeatherData(max, 0, condition(code), conditionHindi(code), 0, "", 0));
                 }
                 
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching forecast: " + e.getMessage(), e);
-                callback.onWeatherError("पूर्वानुमान प्राप्त करने में त्रुटि: " + e.getMessage());
+                callback.onWeatherError("पूर्वानुमान नहीं मिल सका। इंटरनेट कनेक्शन जाँचें।");
             }
         });
     }
@@ -127,14 +136,9 @@ public class WeatherService {
             try {
                 Log.d(TAG, "Checking farming alerts for location: " + location.getLatitude() + ", " + location.getLongitude());
                 
-                // Simulate processing time
-                Thread.sleep(800);
-                
-                // Generate farming-specific alerts
-                WeatherAlert alert = generateFarmingAlert(location);
-                if (alert != null) {
-                    callback.onAlertReceived(alert);
-                }
+                APIService.CurrentWeather current = fetchCurrent(location);
+                WeatherAlert alert = alertFromWeather(current);
+                if (alert != null) callback.onAlertReceived(alert);
                 
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching alerts: " + e.getMessage(), e);
@@ -147,20 +151,32 @@ public class WeatherService {
             try {
                 Log.d(TAG, "Checking weather alerts for location: " + location.getLatitude() + ", " + location.getLongitude());
                 
-                // Simulate processing time
-                Thread.sleep(600);
-                
-                // Generate weather alerts
-                WeatherAlert alert = generateFarmingAlert(location);
-                if (alert != null) {
-                    callback.onAlertReceived(alert);
-                }
+                APIService.CurrentWeather current = fetchCurrent(location);
+                WeatherAlert alert = alertFromWeather(current);
+                if (alert != null) callback.onAlertReceived(alert);
                 
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching weather alerts: " + e.getMessage(), e);
             }
         });
     }
+
+    private APIService.CurrentWeather fetchCurrent(Location location) throws Exception {
+        retrofit2.Response<APIService.OpenMeteoResponse> response = apiService.openMeteo()
+                .current(location.getLatitude(), location.getLongitude(), 1).execute();
+        if (!response.isSuccessful() || response.body() == null || response.body().current == null) throw new Exception("Weather unavailable");
+        return response.body().current;
+    }
+    private WeatherAlert alertFromWeather(APIService.CurrentWeather weather) {
+        long now = System.currentTimeMillis();
+        if (weather.temperature >= 38) return new WeatherAlert("Heat", "गर्मी", "High temperature", "तापमान अधिक है; खेत में काम करते समय सावधानी रखें और सिंचाई की स्थिति देखें।", "Medium", now, now + 6 * 60 * 60 * 1000L);
+        if (weather.weatherCode >= 95) return new WeatherAlert("Thunderstorm", "आंधी", "Thunderstorm conditions", "गरज-चमक की स्थिति है; खुले खेत और बिजली के उपकरणों से दूर रहें।", "High", now, now + 3 * 60 * 60 * 1000L);
+        if (weather.weatherCode >= 51 && weather.weatherCode <= 82) return new WeatherAlert("Precipitation", "वर्षा", "Precipitation conditions", "वर्षा की स्थिति है; कटाई और खुले में भंडारण की योजना सावधानी से करें।", "Low", now, now + 3 * 60 * 60 * 1000L);
+        return null;
+    }
+    private String condition(int code) { if (code == 0) return "Clear"; if (code <= 3) return "Cloudy"; if (code <= 48) return "Fog"; if (code <= 67) return "Rain"; if (code <= 77) return "Snow"; if (code <= 82) return "Showers"; if (code >= 95) return "Thunderstorm"; return "Unknown"; }
+    private String conditionHindi(int code) { if (code == 0) return "साफ़ आसमान"; if (code <= 3) return "बादल"; if (code <= 48) return "कोहरा"; if (code <= 67) return "बारिश"; if (code <= 77) return "बर्फ़"; if (code <= 82) return "बौछारें"; if (code >= 95) return "आंधी-तूफ़ान"; return "स्थिति अज्ञात"; }
+    private String direction(int degrees) { String[] values = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"}; return values[(int) Math.round(degrees / 45.0) % 8]; }
 
     private WeatherData generateWeatherData(Location location) {
         // Generate realistic weather based on location and time

@@ -158,8 +158,7 @@ public class WeatherFragment extends Fragment {
                 @Override
                 public void onWeatherError(String error) {
                     requireActivity().runOnUiThread(() -> {
-                        Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show();
-                        showDemoWeatherData();
+                        showWeatherUnavailable(error);
                     });
                 }
             });
@@ -189,7 +188,7 @@ public class WeatherFragment extends Fragment {
             
         } else {
             Log.e(TAG, "WeatherService or location is null");
-            showDemoWeatherData();
+            showWeatherUnavailable("मौसम जानकारी अभी उपलब्ध नहीं है");
         }
     }
     
@@ -257,34 +256,13 @@ public class WeatherFragment extends Fragment {
         }
     }
     
-    private void showDemoWeatherData() {
-        Log.d(TAG, "Showing demo weather data");
-        
-        // Show demo current weather
-        if (tvCurrentTemp != null) tvCurrentTemp.setText("32°C");
-        if (tvCurrentCondition != null) tvCurrentCondition.setText("मेघ-आवृत");
-        if (tvHumidity != null) tvHumidity.setText("75%");
-        if (tvWindSpeed != null) tvWindSpeed.setText("12 km/h");
-        
-        // Show demo forecast
-        if (tvForecast1 != null) tvForecast1.setText("कल: हल्की बारिश · 31°C");
-        if (tvForecast2 != null) tvForecast2.setText("परसों: बादल · 33°C");
-        if (tvForecast3 != null) tvForecast3.setText("मंगल: धूप · 35°C");
-        if (tvForecast4 != null) tvForecast4.setText("बुध: बादल · 34°C");
-        if (tvForecast5 != null) tvForecast5.setText("गुरु: हल्की बारिश · 30°C");
-        
-        // Show demo farming advice
-        if (tvFarmingAdvice != null) {
-            tvFarmingAdvice.setText("🌧️ बारिश की संभावना: कटाई टालें\n" +
-                                   "💧 उच्च आर्द्रता: फंगल रोगों से सावधान\n" +
-                                   "✅ सिंचाई का समय उपयुक्त है");
-        }
-        
-        // Show demo weather alert
-        if (weatherAlertCard != null && tvWeatherAlert != null) {
-            weatherAlertCard.setVisibility(View.VISIBLE);
-            tvWeatherAlert.setText("अगले 24 घंटे में मध्यम वर्षा की संभावना। कटाई टालें, भंडारण ढकें।");
-        }
+    private void showWeatherUnavailable(String message) {
+        if (tvCurrentTemp != null) tvCurrentTemp.setText("--°C");
+        if (tvCurrentCondition != null) tvCurrentCondition.setText(message);
+        if (tvHumidity != null) tvHumidity.setText("--%");
+        if (tvWindSpeed != null) tvWindSpeed.setText("--");
+        if (tvFarmingAdvice != null) tvFarmingAdvice.setText("लाइव मौसम मिलने पर खेती संबंधी जानकारी यहाँ दिखेगी।");
+        if (weatherAlertCard != null) weatherAlertCard.setVisibility(View.GONE);
     }
     
     @Override
@@ -294,7 +272,8 @@ public class WeatherFragment extends Fragment {
                 getCurrentLocationAndWeather();
             } else {
                 Toast.makeText(requireContext(), "स्थान की अनुमति आवश्यक है मौसम जानकारी के लिए", Toast.LENGTH_LONG).show();
-                showDemoWeatherData();
+                currentLocation = createDefaultLocation();
+                fetchWeatherData();
             }
         }
     }

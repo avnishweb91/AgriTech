@@ -21,8 +21,8 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.example.smarthub.R;
-import com.example.smarthub.payment.UPIPaymentService;
 import com.example.smarthub.services.MarketplaceService;
+import com.example.smarthub.api.APIService;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.chip.Chip;
@@ -40,6 +40,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import android.os.Handler;
+import android.os.Looper;
 
 public class MarketplaceFragment extends Fragment {
     
@@ -53,7 +57,9 @@ public class MarketplaceFragment extends Fragment {
     
     // Services
     private MarketplaceService marketplaceService;
-    private UPIPaymentService upiPaymentService;
+    private APIService apiService;
+    private ExecutorService chatExecutor;
+    private Handler chatHandler;
     
     // Data
     private List<MarketplaceService.CropListing> currentListings = new ArrayList<>();
@@ -127,7 +133,9 @@ public class MarketplaceFragment extends Fragment {
     
     private void setupServices() {
         marketplaceService = new MarketplaceService(requireContext());
-        upiPaymentService = new UPIPaymentService(requireContext());
+        apiService = new APIService(requireContext());
+        chatExecutor = Executors.newSingleThreadExecutor();
+        chatHandler = new Handler(Looper.getMainLooper());
     }
     
     private void setupSpinners() {
@@ -288,7 +296,8 @@ public class MarketplaceFragment extends Fragment {
                 public void onError(String error) {
                     requireActivity().runOnUiThread(() -> {
                         Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show();
-                        showDemoData();
+                        displayCropListings(new ArrayList<>());
+                        displayBuyRequests(new ArrayList<>());
                     });
                 }
             });
@@ -450,7 +459,7 @@ public class MarketplaceFragment extends Fragment {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             1
         ));
-        chatButton.setOnClickListener(v -> showChatDialog(listing.farmerNameHindi, listing.cropNameHindi, 
+        chatButton.setOnClickListener(v -> showChatDialog(listing.farmerId, listing.listingId, listing.farmerNameHindi, listing.cropNameHindi,
             listing.quantity + " " + listing.unit, String.format(Locale.getDefault(), "₹%.0f/%s", listing.pricePerUnit, listing.unit)));
 
         MaterialButton buyButton = new MaterialButton(requireContext());
@@ -585,7 +594,7 @@ public class MarketplaceFragment extends Fragment {
             LinearLayout.LayoutParams.WRAP_CONTENT,
             1
         ));
-        chatButton.setOnClickListener(v -> showChatDialog(request.buyerNameHindi, request.cropNameHindi, 
+        chatButton.setOnClickListener(v -> showChatDialog(request.buyerId, null, request.buyerNameHindi, request.cropNameHindi,
             request.requiredQuantity + " " + request.unit, String.format(Locale.getDefault(), "₹%.0f/%s तक", request.maxPricePerUnit, request.unit)));
 
         MaterialButton sellButton = new MaterialButton(requireContext());
@@ -708,112 +717,85 @@ public class MarketplaceFragment extends Fragment {
         marketStatsContainer.addView(topCropsCard);
     }
     
-    private void showDemoData() {
-        // Show demo listings
-        List<MarketplaceService.CropListing> demoListings = new ArrayList<>();
-        demoListings.add(new MarketplaceService.CropListing(
-            "farmer_001", "राजेश कुमार", "राजेश कुमार", "+919876543210",
-            "maize", "मक्का", 50.0, "quintal", "A Grade", 1840.0,
-            "Patna", "Bihar", 25.5941, 85.1376, "उच्च गुणवत्ता वाला मक्का"
-        ));
-        demoListings.add(new MarketplaceService.CropListing(
-            "farmer_002", "सुनील सिंह", "सुनील सिंह", "+919876543211",
-            "potato", "आलू", 80.0, "quintal", "A Grade", 1200.0,
-            "Ara", "Bihar", 25.5569, 84.6634, "ताज़ा आलू"
-        ));
-        displayCropListings(demoListings);
-
-        // Show demo buy requests
-        List<MarketplaceService.BuyRequest> demoRequests = new ArrayList<>();
-        demoRequests.add(new MarketplaceService.BuyRequest(
-            "buyer_001", "अमित कुमार", "अमित कुमार", "+919876543212",
-            "wheat", "गेहूँ", 100.0, "quintal", 1950.0,
-            "Gaya", "Bihar", 24.7914, 85.0002, "high",
-            "तत्काल आवश्यकता", "delivery", System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000
-        ));
-        displayBuyRequests(demoRequests);
-
-        // Show demo market stats
-        Map<String, Double> cropPrices = new HashMap<>();
-        cropPrices.put("wheat", 1900.0);
-        cropPrices.put("maize", 1840.0);
-        cropPrices.put("potato", 1200.0);
-        
-        MarketplaceService.MarketStats demoStats = new MarketplaceService.MarketStats(
-            "Bihar", "बिहार", 25, 15, 1850.0, "wheat", "गेहूँ", "stable",
-            cropPrices, 150, 75
-        );
-        displayMarketStats(demoStats);
+    private void showChatDialog(String otherUserId, String listingId, String personName, String cropDetails, String quantity, String price) {
+        String token = requireContext().getSharedPreferences("auth_prefs", 0).getString("auth_token", null);
+        String ownId = requireContext().getSharedPreferences("auth_prefs", 0).getString("user_id", null);
+        if (token == null || ownId == null) { Toast.makeText(requireContext(), "चैट के लिए पहले लॉगिन करें", Toast.LENGTH_SHORT).show(); return; }
+        if (ownId.equals(otherUserId)) { Toast.makeText(requireContext(), "यह आपकी अपनी पोस्ट है", Toast.LENGTH_SHORT).show(); return; }
+        LinearLayout content = new LinearLayout(requireContext()); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(24, 8, 24, 8);
+        TextView context = new TextView(requireContext()); context.setText(personName + " • " + cropDetails + " • " + quantity + " • " + price); content.addView(context);
+        ScrollView scroll = new ScrollView(requireContext()); LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1); scrollParams.height = (int)(requireContext().getResources().getDisplayMetrics().density * 250); scroll.setLayoutParams(scrollParams);
+        TextView transcript = new TextView(requireContext()); transcript.setPadding(8, 16, 8, 16); scroll.addView(transcript); content.addView(scroll);
+        EditText composer = new EditText(requireContext()); composer.setHint("संदेश लिखें"); composer.setMaxLines(4); content.addView(composer);
+        MaterialButton send = new MaterialButton(requireContext()); send.setText("संदेश भेजें"); content.addView(send);
+        AlertDialog dialog = new AlertDialog.Builder(requireContext()).setTitle("💬 " + personName).setView(content).setNegativeButton("बंद करें", null).create();
+        Runnable refresh = new Runnable() { @Override public void run() { loadChat(token, ownId, otherUserId, listingId, transcript, scroll); if (dialog.isShowing()) chatHandler.postDelayed(this, 5000); } };
+        dialog.setOnShowListener(d -> { loadChat(token, ownId, otherUserId, listingId, transcript, scroll); chatHandler.postDelayed(refresh, 5000); });
+        dialog.setOnDismissListener(d -> chatHandler.removeCallbacks(refresh));
+        send.setOnClickListener(v -> { String body = composer.getText().toString().trim(); if (body.isEmpty()) return; send.setEnabled(false);
+            chatExecutor.execute(() -> { try { retrofit2.Response<APIService.ChatMessage> response = apiService.backend().sendChatMessage("Bearer " + token, new APIService.ChatMessageRequest(otherUserId, listingId, body)).execute();
+                requireActivity().runOnUiThread(() -> { send.setEnabled(true); if (response.isSuccessful()) { composer.setText(""); loadChat(token, ownId, otherUserId, listingId, transcript, scroll); } else Toast.makeText(requireContext(), "संदेश नहीं भेजा जा सका", Toast.LENGTH_SHORT).show(); });
+            } catch (Exception e) { if (isAdded()) requireActivity().runOnUiThread(() -> { send.setEnabled(true); Toast.makeText(requireContext(), "इंटरनेट कनेक्शन जाँचें", Toast.LENGTH_SHORT).show(); }); } });
+        });
+        dialog.show();
     }
-    
-    private void showChatDialog(String personName, String cropDetails, String quantity, String price) {
-        String message = String.format("💬 चैट शुरू करें\n\n" +
-                "व्यक्ति: %s\n" +
-                "फसल: %s\n" +
-                "मात्रा: %s\n" +
-                "मूल्य: %s\n\n" +
-                "चैट सुविधा जल्द ही उपलब्ध होगी!", 
-                personName, cropDetails, quantity, price);
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("💬 चैट")
-               .setMessage(message)
-               .setPositiveButton("ठीक है", (dialog, which) -> dialog.dismiss())
-               .show();
+
+    private void loadChat(String token, String ownId, String otherId, String listingId, TextView transcript, ScrollView scroll) {
+        if (chatExecutor == null || chatExecutor.isShutdown()) return;
+        chatExecutor.execute(() -> { try { retrofit2.Response<List<APIService.ChatMessage>> response = apiService.backend().getChatMessages("Bearer " + token, otherId, listingId).execute();
+            if (response.isSuccessful() && response.body() != null && isAdded()) requireActivity().runOnUiThread(() -> { StringBuilder text = new StringBuilder(); for (APIService.ChatMessage m : response.body()) text.append(m.senderId.equals(ownId) ? "आप: " : "" + "सामने वाला: ").append(m.body).append("\n\n"); transcript.setText(text.length() == 0 ? "अभी कोई संदेश नहीं। बातचीत शुरू करें।" : text.toString()); scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN)); });
+        } catch (Exception e) { Log.w(TAG, "Chat refresh failed", e); } });
     }
     
     private void initiatePurchase(MarketplaceService.CropListing listing) {
-        String message = String.format("🛒 खरीद शुरू करें\n\n" +
-                "फसल: %s\n" +
-                "मात्रा: %s %s\n" +
-                "मूल्य: ₹%.0f\n" +
-                "विक्रेता: %s\n\n" +
-                "UPI भुगतान के लिए तैयार करें", 
-                listing.cropNameHindi, listing.quantity, listing.unit, 
-                listing.pricePerUnit, listing.farmerNameHindi);
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("🛒 खरीद")
-               .setMessage(message)
-               .setPositiveButton("UPI भुगतान", (dialog, which) -> {
-                   initiateUPIPayment(listing);
-                   dialog.dismiss();
-               })
-               .setNegativeButton("रद्द करें", (dialog, which) -> dialog.dismiss())
-               .show();
+        EditText quantity = new EditText(requireContext());
+        quantity.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        quantity.setHint("खरीदने की मात्रा (अधिकतम " + listing.quantity + " " + listing.unit + ")");
+        new AlertDialog.Builder(requireContext()).setTitle("🛒 खरीद की मात्रा")
+                .setMessage(listing.cropNameHindi + " • ₹" + String.format(Locale.getDefault(), "%.2f", listing.pricePerUnit) + "/" + listing.unit + "\nविक्रेता: " + listing.farmerNameHindi)
+                .setView(quantity).setPositiveButton("आगे बढ़ें", (dialog, which) -> {
+                    String entered = quantity.getText().toString().trim();
+                    try {
+                        double selected = Double.parseDouble(entered);
+                        if (selected <= 0 || selected > listing.quantity) throw new NumberFormatException();
+                        startOnlineCheckout(listing, selected);
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(requireContext(), "उपलब्ध मात्रा के भीतर सही मात्रा लिखें", Toast.LENGTH_LONG).show();
+                    }
+                }).setNegativeButton("रद्द करें", null).show();
     }
     
-    private void initiateUPIPayment(MarketplaceService.CropListing listing) {
-        double totalAmount = listing.quantity * listing.pricePerUnit;
-        
+    private void startOnlineCheckout(MarketplaceService.CropListing listing, double quantity) {
+        String token = requireContext().getSharedPreferences("auth_prefs", 0).getString("auth_token", null);
+        if (token == null) { Toast.makeText(requireContext(), "भुगतान के लिए लॉगिन करें", Toast.LENGTH_SHORT).show(); return; }
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> { try {
+            retrofit2.Response<APIService.PaymentOrder> response = apiService.backend().createPaymentOrder("Bearer " + token,
+                    new APIService.PaymentOrderRequest(listing.listingId, quantity)).execute();
+            if (!response.isSuccessful() || response.body() == null || response.body().orderId == null) {
+                if (isAdded()) requireActivity().runOnUiThread(() -> Toast.makeText(requireContext(), response.code() == 503 ? "ऑनलाइन भुगतान अभी सेटअप नहीं है। विक्रेता से सीधे संपर्क करें।" : "भुगतान शुरू नहीं हो सका", Toast.LENGTH_LONG).show());
+                return;
+            }
+            if (!isAdded()) return;
+            requireActivity().runOnUiThread(() -> openGatewayCheckout(response.body(), listing, quantity));
+        } catch (Exception e) { if (isAdded()) requireActivity().runOnUiThread(() -> Toast.makeText(requireContext(), "इंटरनेट कनेक्शन जाँचें", Toast.LENGTH_SHORT).show()); }
+        finally { executor.shutdown(); } });
+    }
+
+    private void openGatewayCheckout(APIService.PaymentOrder order, MarketplaceService.CropListing listing, double quantity) {
         try {
-            upiPaymentService.initiateUPIPayment(
-                requireActivity(),
-                String.valueOf(totalAmount),
-                "merchant@upi",
-                listing.farmerNameHindi,
-                listing.listingId,
-                new UPIPaymentService.PaymentCallback() {
-                    @Override
-                    public void onPaymentSuccess(String transactionId, String amount) {
-                        Toast.makeText(requireContext(), "भुगतान सफल! लेनदेन ID: " + transactionId, Toast.LENGTH_LONG).show();
-                    }
-                    
-                    @Override
-                    public void onPaymentFailure(String error) {
-                        Toast.makeText(requireContext(), "भुगतान विफल: " + error, Toast.LENGTH_LONG).show();
-                    }
-                    
-                    @Override
-                    public void onPaymentCancelled() {
-                        Toast.makeText(requireContext(), "भुगतान रद्द किया गया", Toast.LENGTH_SHORT).show();
-                    }
-                }
-            );
-        } catch (Exception e) {
-            Log.e(TAG, "Error initiating UPI payment: " + e.getMessage(), e);
-            Toast.makeText(requireContext(), "UPI भुगतान शुरू करने में त्रुटि", Toast.LENGTH_SHORT).show();
-        }
+            requireContext().getSharedPreferences("payment_state", 0).edit()
+                    .putString("pending_payment_order", order.orderId).putString("pending_payment_token",
+                            requireContext().getSharedPreferences("auth_prefs", 0).getString("auth_token", "")).apply();
+            com.razorpay.Checkout checkout = new com.razorpay.Checkout(); checkout.setKeyID(order.keyId);
+            org.json.JSONObject options = new org.json.JSONObject();
+            options.put("name", "AgriTech Marketplace"); options.put("description", listing.cropNameHindi + " • " + quantity + " " + listing.unit);
+            options.put("order_id", order.orderId); options.put("amount", order.amount); options.put("currency", order.currency);
+            options.put("theme.color", "#2E7D32");
+            String phone = requireContext().getSharedPreferences("auth_prefs", 0).getString("phone_number", "");
+            if (!phone.isEmpty()) { org.json.JSONObject prefill = new org.json.JSONObject(); prefill.put("contact", phone); options.put("prefill", prefill); }
+            checkout.open(requireActivity(), options);
+        } catch (Exception e) { Log.e(TAG, "Unable to open payment checkout", e); Toast.makeText(requireContext(), "भुगतान विंडो नहीं खुल सकी", Toast.LENGTH_SHORT).show(); }
     }
     
     private void showSellDialog(MarketplaceService.BuyRequest request) {

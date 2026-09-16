@@ -33,3 +33,17 @@ CREATE TABLE IF NOT EXISTS supply_chain_events (
   event_type TEXT NOT NULL, note TEXT, latitude NUMERIC, longitude NUMERIC,
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY, listing_id UUID REFERENCES listings(id) ON DELETE SET NULL,
+  sender_id UUID NOT NULL REFERENCES users(id), recipient_id UUID NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 2000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_conversation_idx ON chat_messages(listing_id, created_at);
+CREATE TABLE IF NOT EXISTS payments (
+  id UUID PRIMARY KEY, buyer_id UUID NOT NULL REFERENCES users(id), listing_id UUID NOT NULL REFERENCES listings(id),
+  quantity NUMERIC NOT NULL CHECK (quantity > 0), amount_paise BIGINT NOT NULL CHECK (amount_paise > 0),
+  gateway_order_id TEXT UNIQUE NOT NULL, gateway_payment_id TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created','paid','failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), paid_at TIMESTAMPTZ
+);

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Arrays;
+import com.example.smarthub.api.APIService;
 
 public class MandiPriceService {
     private static final String TAG = "MandiPriceService";
@@ -23,6 +24,7 @@ public class MandiPriceService {
     private final Random random;
     private final Map<String, List<MandiPrice>> priceCache;
     private final Map<String, PriceTrend> trendCache;
+    private final APIService apiService;
 
     public interface PriceCallback {
         void onPricesReceived(List<MandiPrice> prices);
@@ -95,6 +97,7 @@ public class MandiPriceService {
         this.random = new Random();
         this.priceCache = new HashMap<>();
         this.trendCache = new HashMap<>();
+        this.apiService = new APIService(context.getApplicationContext());
         
         // Initialize price data
         initializePriceData();
@@ -107,18 +110,12 @@ public class MandiPriceService {
         executorService.execute(() -> {
             try {
                 Log.d(TAG, "Fetching mandi prices for crop: " + cropName);
-                
-                // Simulate network delay
-                Thread.sleep(1200);
-                
-                // Get prices from cache or generate new ones
-                List<MandiPrice> prices = getPricesForCrop(cropName, userLocation);
-                
-                callback.onPricesReceived(prices);
-                
+                List<MandiPrice> prices = fetchOfficialPrices(cropName, null, null);
+                if (prices.isEmpty()) callback.onPriceError("अभी इस फसल के लाइव मंडी भाव उपलब्ध नहीं हैं");
+                else callback.onPricesReceived(prices);
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching mandi prices: " + e.getMessage(), e);
-                callback.onPriceError("मंडी भाव प्राप्त करने में त्रुटि: " + e.getMessage());
+                callback.onPriceError("लाइव मंडी भाव नहीं मिल सके। इंटरनेट कनेक्शन जाँचें।");
             }
         });
     }
@@ -127,20 +124,50 @@ public class MandiPriceService {
         executorService.execute(() -> {
             try {
                 Log.d(TAG, "Fetching mandi prices for crop: " + cropName + " in district: " + district + ", state: " + state);
-                
-                // Simulate network delay
-                Thread.sleep(1000);
-                
-                // Get prices for specific district
-                List<MandiPrice> prices = getPricesForDistrict(cropName, state, district);
-                
-                callback.onPricesReceived(prices);
-                
+                List<MandiPrice> prices = fetchOfficialPrices(cropName, normalizeState(state), district);
+                if (prices.isEmpty()) callback.onPriceError("इस फसल और ज़िले के लिए अभी सरकारी भाव उपलब्ध नहीं हैं");
+                else callback.onPricesReceived(prices);
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching district mandi prices: " + e.getMessage(), e);
-                callback.onPriceError("जिला मंडी भाव प्राप्त करने में त्रुटि: " + e.getMessage());
+                callback.onPriceError("लाइव मंडी भाव नहीं मिल सके। इंटरनेट कनेक्शन जाँचें।");
             }
         });
+    }
+
+    private String normalizeCrop(String value) {
+        if (value == null) return "";
+        String text = value.toLowerCase();
+        if (text.contains("wheat") || text.contains("गेह")) return "Wheat";
+        if (text.contains("rice") || text.contains("धान")) return "Rice";
+        if (text.contains("maize") || text.contains("corn") || text.contains("मक्का")) return "Maize";
+        if (text.contains("potato") || text.contains("आलू")) return "Potato";
+        if (text.contains("onion") || text.contains("प्याज")) return "Onion";
+        if (text.contains("tomato") || text.contains("टमाटर")) return "Tomato";
+        return value;
+    }
+    private String normalizeState(String value) {
+        if (value == null) return "";
+        String text = value.toLowerCase();
+        if (text.contains("बिहार") || text.contains("bihar")) return "Bihar";
+        if (text.contains("उत्तर प्रदेश") || text.contains("uttar pradesh")) return "Uttar Pradesh";
+        if (text.contains("झारखंड") || text.contains("jharkhand")) return "Jharkhand";
+        return value;
+    }
+    private double parsePrice(String value) { try { return value == null ? 0 : Double.parseDouble(value.replace(",", "").trim()); } catch (NumberFormatException e) { return 0; } }
+
+    private List<MandiPrice> fetchOfficialPrices(String cropName, String state, String district) throws Exception {
+        retrofit2.Response<APIService.MandiBackendResponse> response = apiService.backend()
+                .getMandiPrices(normalizeCrop(cropName), state, district).execute();
+        if (!response.isSuccessful() || response.body() == null) return new ArrayList<>();
+        List<MandiPrice> prices = new ArrayList<>();
+        if (response.body().records != null) for (APIService.MandiRecord record : response.body().records) {
+            double modal = parsePrice(record.modalPrice);
+            if (modal <= 0) continue;
+            String mandi = record.market == null ? (record.district == null ? "मंडी" : record.district) : record.market;
+            prices.add(new MandiPrice(mandi, mandi, record.commodity, getCropNameHindi(cropName),
+                    modal, "₹/क्विंटल", record.variety == null ? "" : record.variety, modal));
+        }
+        return prices;
     }
 
     public List<String> getDistrictsByState(String state) {
@@ -329,23 +356,7 @@ public class MandiPriceService {
     }
 
     public void getPriceTrend(String cropName, TrendCallback callback) {
-        executorService.execute(() -> {
-            try {
-                Log.d(TAG, "Fetching price trend for crop: " + cropName);
-                
-                // Simulate processing time
-                Thread.sleep(800);
-                
-                // Get trend from cache or generate new one
-                PriceTrend trend = getTrendForCrop(cropName);
-                
-                callback.onTrendReceived(trend);
-                
-            } catch (Exception e) {
-                Log.e(TAG, "Error fetching price trend: " + e.getMessage(), e);
-                callback.onTrendError("मूल्य प्रवृत्ति प्राप्त करने में त्रुटि: " + e.getMessage());
-            }
-        });
+        callback.onTrendError("मूल्य का ऐतिहासिक रुझान अभी उपलब्ध नहीं है");
     }
 
     public void getNearbyMandis(Location userLocation, PriceCallback callback) {
@@ -353,12 +364,8 @@ public class MandiPriceService {
             try {
                 Log.d(TAG, "Finding nearby mandis for location: " + userLocation.getLatitude() + ", " + userLocation.getLongitude());
                 
-                // Simulate processing time
-                Thread.sleep(1000);
-                
-                // Generate nearby mandi data
-                List<MandiPrice> nearbyPrices = generateNearbyMandiPrices(userLocation);
-                
+                List<MandiPrice> nearbyPrices = fetchOfficialPrices("", null, null);
+                if (nearbyPrices.isEmpty()) { callback.onPriceError("लाइव मंडी डेटा अभी उपलब्ध नहीं है"); return; }
                 callback.onPricesReceived(nearbyPrices);
                 
             } catch (Exception e) {

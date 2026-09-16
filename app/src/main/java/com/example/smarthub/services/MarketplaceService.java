@@ -340,9 +340,9 @@ public class MarketplaceService {
         this.apiService = new APIService(context.getApplicationContext());
         this.authStore = context.getApplicationContext().getSharedPreferences("auth_prefs", Context.MODE_PRIVATE);
         
-        // Seed demo data only on first run; local records survive restarts.
+        // Keep a real empty marketplace on first run; locally-created records survive restarts.
         if (localStore.contains("listings")) restorePersistedData();
-        else initializeMarketplaceData();
+        else persistMarketplaceData();
         
         // Start periodic updates
         startPeriodicUpdates();
@@ -394,8 +394,15 @@ public class MarketplaceService {
         java.lang.reflect.Type requestType = new TypeToken<List<BuyRequest>>() {}.getType();
         List<CropListing> listings = gson.fromJson(localStore.getString("listings", "[]"), listingType);
         List<BuyRequest> requests = gson.fromJson(localStore.getString("buy_requests", "[]"), requestType);
-        if (listings != null) for (CropListing item : listings) listingsCache.computeIfAbsent(item.state.toLowerCase(), k -> new ArrayList<>()).add(item);
-        if (requests != null) for (BuyRequest item : requests) buyRequestsCache.computeIfAbsent(item.state.toLowerCase(), k -> new ArrayList<>()).add(item);
+        if (listings != null) for (CropListing item : listings) {
+            if (item.farmerId != null && item.farmerId.matches("farmer_00[1-5]")) continue;
+            listingsCache.computeIfAbsent(item.state.toLowerCase(), k -> new ArrayList<>()).add(item);
+        }
+        if (requests != null) for (BuyRequest item : requests) {
+            if (item.buyerId != null && item.buyerId.matches("buyer_00[1-4]")) continue;
+            buyRequestsCache.computeIfAbsent(item.state.toLowerCase(), k -> new ArrayList<>()).add(item);
+        }
+        persistMarketplaceData();
     }
 
     private void persistMarketplaceData() {
