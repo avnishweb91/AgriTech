@@ -33,7 +33,7 @@
     <string name="enter_otp">ओटीपी दर्ज करें</string>
     <string name="otp_hint">6 अंकों का कोड</string>
     <string name="verify">सत्यापित करें</string>
-    <string name="demo_otp">डेमो: ओटीपी 123456 माना जाए</string>
+    <string name="demo_otp">आपके मोबाइल पर आया ओटीपी दर्ज करें</string>
     
     <!-- Home Dashboard -->
     <string name="greeting">नमस्ते, किसान जी!</string>

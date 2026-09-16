@@ -73,7 +73,7 @@ A mobile-first Android application that combines:
 - **Database**: Room Database (local storage)
 
 ### **Backend Services (Firebase-free)**
-- **Authentication**: REST API OTP service; the current client is local-first and uses demo OTP `123456`
+- **Authentication**: Railway REST API with Twilio Verify OTP; the client keeps the verified session locally for offline startup
 - **Database**: Room offline cache, synced to PostgreSQL through a REST API
 - **Storage**: S3-compatible object storage (MinIO, Cloudflare R2, AWS S3, or Backblaze B2)
 - **Messaging**: Web push/device notifications through a backend provider, with WorkManager fallback

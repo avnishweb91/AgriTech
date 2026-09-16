@@ -163,7 +163,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:text="डेमो प्रोटोटाइप — बिना सर्वर के"
+            android:text="सुरक्षित लॉगिन — ओटीपी आपके मोबाइल पर भेजा जाएगा"
             android:textColor="@color/text_hint"
             android:textSize="12sp" />
 
