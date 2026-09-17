@@ -38,6 +38,7 @@ public class PricesFragment extends Fragment {
     
     private static final String TAG = "PricesFragment";
     private static final int LOCATION_PERMISSION_REQUEST = 1002;
+    private static final String DISTRICT_PLACEHOLDER = "जिला चुनें";
     
     private AutoCompleteTextView cropSpinner, locationSpinner, districtSpinner;
     private LinearLayout pricesContainer, trendsContainer;
@@ -46,9 +47,11 @@ public class PricesFragment extends Fragment {
     
     private MandiPriceService mandiPriceService;
     private Location currentLocation;
+    private int activePriceRequest = 0;
     private String selectedCrop = "गेहूँ";
     private String selectedLocation = "बिहार";
-    private String selectedDistrict = "Patna";
+    private String selectedDistrict = "";
+    private List<String> availableDistricts = new ArrayList<>();
 
     @Nullable
     @Override
@@ -68,12 +71,14 @@ public class PricesFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        
-        // Check location permission and get prices
+
+        // Location is optional: farmers can choose a state manually and should not
+        // be blocked by a location-permission prompt to see mandi prices.
         if (checkLocationPermission()) {
             getCurrentLocationAndPrices();
         } else {
-            requestLocationPermission();
+            currentLocation = createDefaultLocation();
+            fetchMandiPrices();
         }
     }
     
@@ -96,8 +101,11 @@ public class PricesFragment extends Fragment {
         // Set up test button
         MaterialButton btnTestDistrict = view.findViewById(R.id.btn_test_district);
         if (btnTestDistrict != null) {
-            btnTestDistrict.setOnClickListener(v -> testDistrictSelection());
+            btnTestDistrict.setVisibility(View.GONE);
         }
+        if (btnRefresh != null) btnRefresh.setOnClickListener(v -> fetchMandiPrices());
+        if (btnViewTrends != null) btnViewTrends.setOnClickListener(v ->
+                Toast.makeText(requireContext(), "ऐतिहासिक सरकारी मूल्य-रुझान अभी उपलब्ध नहीं हैं।", Toast.LENGTH_LONG).show());
     }
     
     private void testDistrictSelection() {
@@ -167,20 +175,33 @@ public class PricesFragment extends Fragment {
 
         cropSpinner.setAdapter(cropAdapter);
         cropSpinner.setText(crops[0], false);
+        selectedCrop = crops[0];
         cropSpinner.setEnabled(true);
 
         // Location spinner
         String[] locations = {
             "बिहार (Bihar)",
-            "उत्तर प्रदेश (UP)",
-            "मध्य प्रदेश (MP)",
+            "उत्तर प्रदेश (Uttar Pradesh)",
+            "मध्य प्रदेश (Madhya Pradesh)",
             "झारखंड (Jharkhand)",
             "पश्चिम बंगाल (West Bengal)",
             "राजस्थान (Rajasthan)",
             "महाराष्ट्र (Maharashtra)",
             "कर्नाटक (Karnataka)",
             "तमिलनाडु (Tamil Nadu)",
-            "आंध्र प्रदेश (Andhra Pradesh)"
+            "आंध्र प्रदेश (Andhra Pradesh)",
+            "छत्तीसगढ़ (Chhattisgarh)", "गोवा (Goa)", "गुजरात (Gujarat)",
+            "हरियाणा (Haryana)", "हिमाचल प्रदेश (Himachal Pradesh)",
+            "मणिपुर (Manipur)", "मेघालय (Meghalaya)", "मिज़ोरम (Mizoram)",
+            "नागालैंड (Nagaland)", "ओडिशा (Odisha)", "पंजाब (Punjab)",
+            "सिक्किम (Sikkim)", "तेलंगाना (Telangana)", "त्रिपुरा (Tripura)",
+            "उत्तराखंड (Uttarakhand)", "अरुणाचल प्रदेश (Arunachal Pradesh)",
+            "असम (Assam)", "केरल (Kerala)",
+            "अंडमान और निकोबार द्वीपसमूह (Andaman and Nicobar Islands)",
+            "चंडीगढ़ (Chandigarh)",
+            "दादरा और नगर हवेली और दमन और दीव (Dadra and Nagar Haveli and Daman and Diu)",
+            "दिल्ली (Delhi)", "जम्मू और कश्मीर (Jammu and Kashmir)",
+            "लद्दाख (Ladakh)", "लक्षद्वीप (Lakshadweep)", "पुडुचेरी (Puducherry)"
         };
 
         ArrayAdapter<String> locationAdapter = new ArrayAdapter<>(
@@ -192,6 +213,7 @@ public class PricesFragment extends Fragment {
         locationAdapter.setDropDownViewResource(android.R.layout.simple_dropdown_item_1line);
         locationSpinner.setAdapter(locationAdapter);
         locationSpinner.setText(locations[0], false);
+        selectedLocation = locations[0];
         locationSpinner.setEnabled(true);
 
         // Set up change listeners
@@ -216,19 +238,12 @@ public class PricesFragment extends Fragment {
         });
 
         districtSpinner.setOnItemClickListener((parent, view1, position, id) -> {
-            if (mandiPriceService != null) {
-                String englishStateName = extractEnglishStateName(selectedLocation);
-                List<String> districts = mandiPriceService.getDistrictsByState(englishStateName);
-                if (position < districts.size()) {
-                    selectedDistrict = districts.get(position);
-                    Log.d(TAG, "District selected: " + selectedDistrict);
-                    updateSelectedInfo();
-                    fetchMandiPrices();
-                }
-            } else {
-                Log.e(TAG, "MandiPriceService is null in district selection");
-                Toast.makeText(requireContext(), "सेवा उपलब्ध नहीं है", Toast.LENGTH_SHORT).show();
-            }
+            selectedDistrict = position == 0 || position > availableDistricts.size()
+                    ? "" : availableDistricts.get(position - 1);
+            Log.d(TAG, "District selected: " + selectedDistrict);
+            updateSelectedInfo();
+            if (selectedDistrict.isEmpty()) showPricesUnavailable("कृपया सूची से जिला चुनें।");
+            else fetchMandiPrices();
         });
 
         // Focus change listeners for better compatibility
@@ -276,38 +291,54 @@ public class PricesFragment extends Fragment {
             return;
         }
         
-        try {
-            List<String> districts = mandiPriceService.getDistrictsByState(state);
-            Log.d(TAG, "Retrieved " + districts.size() + " districts for " + state);
-            
-            if (districts.isEmpty()) {
-                Log.w(TAG, "No districts found for state: " + state);
-                Toast.makeText(requireContext(), "इस राज्य के लिए जिले उपलब्ध नहीं हैं", Toast.LENGTH_SHORT).show();
-                return;
+        selectedDistrict = "";
+        availableDistricts.clear();
+        setDistrictAdapter(new ArrayList<>());
+        districtSpinner.setText("जिले लोड हो रहे हैं…", false);
+        mandiPriceService.loadDistrictsByState(state, new MandiPriceService.DistrictsCallback() {
+            @Override
+            public void onDistrictsReceived(List<String> officialDistricts) {
+                if (!isAdded()) return;
+                androidx.fragment.app.FragmentActivity activity = getActivity();
+                if (activity == null) return;
+                activity.runOnUiThread(() -> {
+                    if (!isAdded() || getView() == null || !state.equals(extractEnglishStateName(selectedLocation))) return;
+                    java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>(officialDistricts);
+                    merged.addAll(mandiPriceService.getDistrictsByState(state));
+                    availableDistricts = new ArrayList<>(merged);
+                    setDistrictAdapter(availableDistricts);
+                    districtSpinner.setText(DISTRICT_PLACEHOLDER, false);
+                    updateSelectedInfo();
+                    if (availableDistricts.isEmpty()) showPricesUnavailable("इस राज्य के लिए मंडी जिले उपलब्ध नहीं हैं।");
+                });
             }
-            
-            ArrayAdapter<String> districtAdapter = new ArrayAdapter<>(
-                requireContext(),
-                android.R.layout.simple_dropdown_item_1line,
-                districts
-            );
-            
-            districtAdapter.setDropDownViewResource(android.R.layout.simple_dropdown_item_1line);
-            districtSpinner.setAdapter(districtAdapter);
-            
-            // Set first district as default
-            selectedDistrict = districts.get(0);
-            districtSpinner.setText(selectedDistrict, false);
-            
-            Log.d(TAG, "Successfully updated district options. Selected district: " + selectedDistrict);
-            
-            // Enable district spinner
-            districtSpinner.setEnabled(true);
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error updating district options: " + e.getMessage(), e);
-            Toast.makeText(requireContext(), "जिले लोड करने में त्रुटि: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
+
+            @Override
+            public void onDistrictsError(String error) {
+                if (!isAdded()) return;
+                androidx.fragment.app.FragmentActivity activity = getActivity();
+                if (activity == null) return;
+                activity.runOnUiThread(() -> {
+                    if (!isAdded() || getView() == null || !state.equals(extractEnglishStateName(selectedLocation))) return;
+                    availableDistricts = mandiPriceService.getDistrictsByState(state);
+                    setDistrictAdapter(availableDistricts);
+                    districtSpinner.setText(DISTRICT_PLACEHOLDER, false);
+                    updateSelectedInfo();
+                    if (availableDistricts.isEmpty()) showPricesUnavailable(error);
+                });
+            }
+        });
+    }
+
+    private void setDistrictAdapter(List<String> districts) {
+        List<String> options = new ArrayList<>();
+        options.add(DISTRICT_PLACEHOLDER);
+        options.addAll(districts);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_dropdown_item_1line, options);
+        adapter.setDropDownViewResource(android.R.layout.simple_dropdown_item_1line);
+        districtSpinner.setAdapter(adapter);
+        districtSpinner.setEnabled(true);
     }
     
     private void setupMandiService() {
@@ -374,15 +405,25 @@ public class PricesFragment extends Fragment {
     }
     
     private void fetchMandiPrices() {
+        if (selectedDistrict == null || selectedDistrict.trim().isEmpty()) {
+            showPricesUnavailable("फसल और राज्य के बाद सूची से जिला चुनें।");
+            return;
+        }
         if (mandiPriceService != null) {
+            final int requestId = ++activePriceRequest;
             String englishStateName = extractEnglishStateName(selectedLocation);
             Log.d(TAG, "Fetching mandi prices for: " + selectedCrop + " in " + selectedLocation + " - " + selectedDistrict + " (State: " + englishStateName + ")");
+            showPricesLoading();
             
             // Use district-based prices instead of location-based
             mandiPriceService.getMandiPricesByDistrict(selectedCrop, englishStateName, selectedDistrict, new MandiPriceService.PriceCallback() {
                 @Override
                 public void onPricesReceived(List<MandiPriceService.MandiPrice> prices) {
-                    requireActivity().runOnUiThread(() -> {
+                    if (!isAdded()) return;
+                    androidx.fragment.app.FragmentActivity activity = getActivity();
+                    if (activity == null) return;
+                    activity.runOnUiThread(() -> {
+                        if (!isAdded() || getView() == null || requestId != activePriceRequest) return;
                         displayMandiPrices(prices);
                         updateLastUpdated();
                     });
@@ -390,25 +431,13 @@ public class PricesFragment extends Fragment {
                 
                 @Override
                 public void onPriceError(String error) {
-                    requireActivity().runOnUiThread(() -> {
-                        Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show();
-                        showPricesUnavailable();
+                    if (!isAdded()) return;
+                    androidx.fragment.app.FragmentActivity activity = getActivity();
+                    if (activity == null) return;
+                    activity.runOnUiThread(() -> {
+                        if (!isAdded() || getView() == null || requestId != activePriceRequest) return;
+                        showPricesUnavailable(error);
                     });
-                }
-            });
-            
-            // Get price trends
-            mandiPriceService.getPriceTrend(selectedCrop, new MandiPriceService.TrendCallback() {
-                @Override
-                public void onTrendReceived(MandiPriceService.PriceTrend trend) {
-                    requireActivity().runOnUiThread(() -> {
-                        displayPriceTrends(trend);
-                    });
-                }
-                
-                @Override
-                public void onTrendError(String error) {
-                    Log.e(TAG, "Trend error: " + error);
                 }
             });
             
@@ -416,6 +445,16 @@ public class PricesFragment extends Fragment {
             Log.e(TAG, "MandiPriceService is null");
             showPricesUnavailable();
         }
+    }
+
+    private void showPricesLoading() {
+        if (pricesContainer == null) return;
+        pricesContainer.removeAllViews();
+        TextView message = new TextView(requireContext());
+        message.setText("सरकारी मंडी भाव लोड हो रहे हैं…");
+        message.setTextSize(16);
+        message.setPadding(24, 32, 24, 32);
+        pricesContainer.addView(message);
     }
     
     private void displayMandiPrices(List<MandiPriceService.MandiPrice> prices) {
@@ -475,7 +514,12 @@ public class PricesFragment extends Fragment {
         leftContent.setOrientation(LinearLayout.VERTICAL);
 
         TextView mandiName = new TextView(requireContext());
-        mandiName.setText(price.mandiNameHindi + " (" + price.mandiName + ")");
+        String mandiLabel = price.mandiName;
+        if (price.mandiNameHindi != null && !price.mandiNameHindi.isEmpty()
+                && !price.mandiNameHindi.equals(price.mandiName)) {
+            mandiLabel = price.mandiNameHindi + " (" + price.mandiName + ")";
+        }
+        mandiName.setText(mandiLabel);
         mandiName.setTextSize(16);
         mandiName.setTextColor(getResources().getColor(R.color.text_primary, null));
         mandiName.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -623,14 +667,28 @@ public class PricesFragment extends Fragment {
     }
     
     private void showPricesUnavailable() {
+        showPricesUnavailable("आज सरकारी फीड में इस फसल का भाव दर्ज नहीं है। दूसरे दिन या फसल चुनकर देखें।");
+    }
+
+    private void showPricesUnavailable(String reason) {
         if (pricesContainer != null) {
             pricesContainer.removeAllViews();
             TextView message = new TextView(requireContext());
-            message.setText("लाइव सरकारी मंडी भाव अभी उपलब्ध नहीं हैं। कोई अनुमानित भाव नहीं दिखाया जा रहा है।");
+            message.setText(reason);
             message.setTextSize(16);
             message.setPadding(24, 32, 24, 32);
             pricesContainer.addView(message);
         }
+    }
+
+    @Override
+    public void onDestroyView() {
+        activePriceRequest++;
+        if (mandiPriceService != null) {
+            mandiPriceService.shutdown();
+            mandiPriceService = null;
+        }
+        super.onDestroyView();
     }
     
     @Override

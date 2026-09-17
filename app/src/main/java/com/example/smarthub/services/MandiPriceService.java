@@ -14,10 +14,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Arrays;
+import java.util.Locale;
+import java.io.IOException;
+import java.util.concurrent.ConcurrentHashMap;
 import com.example.smarthub.api.APIService;
 
 public class MandiPriceService {
     private static final String TAG = "MandiPriceService";
+    private static final long PRICE_CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(5);
+    private static final Map<String, CachedPrices> OFFICIAL_PRICE_CACHE = new ConcurrentHashMap<>();
     private final ExecutorService executorService;
     private final ScheduledExecutorService scheduledExecutor;
     private final Context context;
@@ -25,6 +30,12 @@ public class MandiPriceService {
     private final Map<String, List<MandiPrice>> priceCache;
     private final Map<String, PriceTrend> trendCache;
     private final APIService apiService;
+
+    private static class CachedPrices {
+        final long savedAt;
+        final List<MandiPrice> prices;
+        CachedPrices(List<MandiPrice> prices) { this.savedAt = System.currentTimeMillis(); this.prices = new ArrayList<>(prices); }
+    }
 
     public interface PriceCallback {
         void onPricesReceived(List<MandiPrice> prices);
@@ -34,6 +45,11 @@ public class MandiPriceService {
     public interface TrendCallback {
         void onTrendReceived(PriceTrend trend);
         void onTrendError(String error);
+    }
+
+    public interface DistrictsCallback {
+        void onDistrictsReceived(List<String> districts);
+        void onDistrictsError(String error);
     }
 
     public static class MandiPrice {
@@ -48,9 +64,15 @@ public class MandiPriceService {
         public final double previousPrice;
         public final double priceChange;
         public final String priceChangeType; // "up", "down", "stable"
+        public final String state;
 
         public MandiPrice(String mandiName, String mandiNameHindi, String cropName, String cropNameHindi,
                          double price, String unit, String quality, double previousPrice) {
+            this(mandiName, mandiNameHindi, cropName, cropNameHindi, price, unit, quality, previousPrice, null);
+        }
+
+        public MandiPrice(String mandiName, String mandiNameHindi, String cropName, String cropNameHindi,
+                         double price, String unit, String quality, double previousPrice, String state) {
             this.mandiName = mandiName;
             this.mandiNameHindi = mandiNameHindi;
             this.cropName = cropName;
@@ -62,6 +84,7 @@ public class MandiPriceService {
             this.previousPrice = previousPrice;
             this.priceChange = price - previousPrice;
             this.priceChangeType = price > previousPrice ? "up" : (price < previousPrice ? "down" : "stable");
+            this.state = state;
         }
     }
 
@@ -92,7 +115,7 @@ public class MandiPriceService {
 
     public MandiPriceService(Context context) {
         this.context = context;
-        this.executorService = Executors.newSingleThreadExecutor();
+        this.executorService = Executors.newFixedThreadPool(3);
         this.scheduledExecutor = Executors.newScheduledThreadPool(1);
         this.random = new Random();
         this.priceCache = new HashMap<>();
@@ -124,16 +147,13 @@ public class MandiPriceService {
         executorService.execute(() -> {
             try {
                 Log.d(TAG, "Fetching mandi prices for crop: " + cropName + " in district: " + district + ", state: " + state);
-                List<MandiPrice> prices = fetchOfficialPrices(cropName, normalizeState(state), district);
-                if (prices.isEmpty() && state != null && !state.trim().isEmpty()) {
-                    // Official market records often use a different district spelling/name
-                    // than the app's district picker (for example Bangalore/Bengaluru).
-                    // Keep the selected crop and state filters, but don't let that mismatch
-                    // hide valid government-reported prices for the state.
-                    Log.i(TAG, "No official prices for selected district; retrying for state: " + state);
-                    prices = fetchOfficialPrices(cropName, normalizeState(state), null);
+                String officialState = normalizeState(state);
+                if (district == null || district.trim().isEmpty()) {
+                    callback.onPriceError("कृपया पहले राज्य और जिला चुनें।");
+                    return;
                 }
-                if (prices.isEmpty()) callback.onPriceError("इस फसल और ज़िले के लिए अभी सरकारी भाव उपलब्ध नहीं हैं");
+                List<MandiPrice> prices = fetchOfficialPrices(cropName, officialState, district);
+                if (prices.isEmpty()) callback.onPriceError("आज " + district + " में " + normalizeCrop(cropName) + " का सरकारी भाव दर्ज नहीं है। दूसरा crop/जिला चुनें या अगले दिन फिर देखें।");
                 else callback.onPricesReceived(prices);
             } catch (Exception e) {
                 Log.e(TAG, "Error fetching district mandi prices: " + e.getMessage(), e);
@@ -144,38 +164,135 @@ public class MandiPriceService {
 
     private String normalizeCrop(String value) {
         if (value == null) return "";
-        String text = value.toLowerCase();
+        String text = value.toLowerCase(Locale.ROOT);
         if (text.contains("wheat") || text.contains("गेह")) return "Wheat";
-        if (text.contains("rice") || text.contains("धान")) return "Rice";
+        if (text.contains("rice") || text.contains("धान") || text.contains("paddy")) return "Rice";
         if (text.contains("maize") || text.contains("corn") || text.contains("मक्का")) return "Maize";
         if (text.contains("potato") || text.contains("आलू")) return "Potato";
         if (text.contains("onion") || text.contains("प्याज")) return "Onion";
         if (text.contains("tomato") || text.contains("टमाटर")) return "Tomato";
-        return value;
+        if (text.contains("grape") || text.contains("अंगूर")) return "Grapes";
+        if (text.contains("pulse") || text.contains("दलहन")) return "Pulses";
+        if (text.contains("oilseed") || text.contains("तिलहन")) return "Oilseeds";
+        if (text.contains("sugarcane") || text.contains("गन्ना")) return "Sugarcane";
+        if (text.contains("cotton") || text.contains("कपास")) return "Cotton";
+        if (text.contains("jute") || text.contains("जूट")) return "Jute";
+        return value.trim();
     }
     private String normalizeState(String value) {
         if (value == null) return "";
-        String text = value.toLowerCase();
+        String text = value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
         if (text.contains("बिहार") || text.contains("bihar")) return "Bihar";
-        if (text.contains("उत्तर प्रदेश") || text.contains("uttar pradesh")) return "Uttar Pradesh";
+        if (text.equals("up") || text.contains("उत्तर प्रदेश") || text.contains("uttar pradesh")) return "Uttar Pradesh";
+        if (text.equals("mp") || text.contains("मध्य प्रदेश") || text.contains("madhya pradesh")) return "Madhya Pradesh";
         if (text.contains("झारखंड") || text.contains("jharkhand")) return "Jharkhand";
+        if (text.contains("पश्चिम बंगाल") || text.contains("west bengal")) return "West Bengal";
+        if (text.contains("राजस्थान") || text.contains("rajasthan")) return "Rajasthan";
+        if (text.contains("महाराष्ट्र") || text.contains("maharashtra")) return "Maharashtra";
+        if (text.contains("कर्नाटक") || text.contains("karnataka")) return "Karnataka";
+        if (text.contains("तमिलनाडु") || text.contains("tamil nadu")) return "Tamil Nadu";
+        if (text.equals("ap") || text.contains("आंध्र प्रदेश") || text.contains("andhra pradesh")) return "Andhra Pradesh";
         return value;
     }
     private double parsePrice(String value) { try { return value == null ? 0 : Double.parseDouble(value.replace(",", "").trim()); } catch (NumberFormatException e) { return 0; } }
 
     private List<MandiPrice> fetchOfficialPrices(String cropName, String state, String district) throws Exception {
+        String canonicalCrop = normalizeCrop(cropName);
+        String cacheKey = canonicalCrop + "|" + state + "|" + district;
+        CachedPrices cached = OFFICIAL_PRICE_CACHE.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() - cached.savedAt < PRICE_CACHE_TTL_MS) {
+            return new ArrayList<>(cached.prices);
+        }
+        List<MandiPrice> prices = new ArrayList<>();
+        for (String commodityFilter : commodityFilters(canonicalCrop)) {
+            prices = fetchPricesForQuery(canonicalCrop, commodityFilter, state, district, district);
+            if (prices.isEmpty() && district != null) {
+                // Keep the same state and selected district, but tolerate official spelling variants.
+                prices = fetchPricesForQuery(canonicalCrop, commodityFilter, state, null, district);
+            }
+            if (!prices.isEmpty()) break;
+        }
+        OFFICIAL_PRICE_CACHE.put(cacheKey, new CachedPrices(prices));
+        return prices;
+    }
+
+    private List<MandiPrice> fetchPricesForQuery(String crop, String commodity, String state,
+                                                  String apiDistrict, String selectedDistrict) throws Exception {
         retrofit2.Response<APIService.MandiBackendResponse> response = apiService.backend()
-                .getMandiPrices(normalizeCrop(cropName), state, district).execute();
-        if (!response.isSuccessful() || response.body() == null) return new ArrayList<>();
+                .getMandiPrices(commodity, state, apiDistrict).execute();
+        if (!response.isSuccessful()) throw new IOException("Mandi API returned HTTP " + response.code());
+        if (response.body() == null) throw new IOException("Mandi API returned an empty response");
         List<MandiPrice> prices = new ArrayList<>();
         if (response.body().records != null) for (APIService.MandiRecord record : response.body().records) {
+            if (state != null && !state.isEmpty()
+                    && !normalizeState(state).equals(normalizeState(record.state))) continue;
+            if (!matchesCrop(crop, record.commodity)) continue;
+            if (selectedDistrict != null && !matchesDistrict(selectedDistrict, record.district)) continue;
             double modal = parsePrice(record.modalPrice);
             if (modal <= 0) continue;
             String mandi = record.market == null ? (record.district == null ? "मंडी" : record.district) : record.market;
-            prices.add(new MandiPrice(mandi, mandi, record.commodity, getCropNameHindi(cropName),
-                    modal, "₹/क्विंटल", record.variety == null ? "" : record.variety, modal));
+            prices.add(new MandiPrice(mandi, mandi, record.commodity, getCropNameHindi(crop),
+                    modal, "क्विंटल", record.variety == null ? "" : record.variety, modal, record.state));
         }
         return prices;
+    }
+
+    private boolean matchesDistrict(String selected, String recordDistrict) {
+        if (recordDistrict == null) return false;
+        String wanted = districtKey(selected);
+        String actual = districtKey(recordDistrict);
+        return wanted.equals(actual);
+    }
+
+    private String districtKey(String district) {
+        String key = district.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        key = key.replace("bangalore", "bengaluru").replace("chapra", "chhapra");
+        if (key.contains("motihari") || key.contains("eastchamparan")) return "eastchamparanmotihari";
+        return key;
+    }
+
+    private String[] commodityFilters(String crop) {
+        switch (crop) {
+            case "Rice": return new String[]{"Rice", "Paddy"};
+            case "Sugarcane": return new String[]{"Sugarcane", "Sugar"};
+            case "Grapes": return new String[]{"Grapes", "Grape"};
+            case "Pulses":
+            case "Oilseeds": return new String[]{null};
+            default: return new String[]{crop};
+        }
+    }
+
+    public void loadDistrictsByState(String state, DistrictsCallback callback) {
+        executorService.execute(() -> {
+            try {
+                retrofit2.Response<APIService.MandiOptionsResponse> response = apiService.backend()
+                        .getMandiOptions(normalizeState(state)).execute();
+                if (!response.isSuccessful() || response.body() == null) {
+                    callback.onDistrictsError("इस राज्य के मंडी जिले अभी लोड नहीं हो सके।");
+                    return;
+                }
+                List<String> districts = response.body().districts == null
+                        ? new ArrayList<>() : new ArrayList<>(response.body().districts);
+                callback.onDistrictsReceived(districts);
+            } catch (Exception e) {
+                Log.e(TAG, "Unable to load official mandi districts", e);
+                callback.onDistrictsError("जिले लोड करने के लिए इंटरनेट कनेक्शन जाँचें।");
+            }
+        });
+    }
+
+    private boolean matchesCrop(String crop, String commodity) {
+        if (crop == null || crop.isEmpty() || commodity == null) return true;
+        String value = commodity.toLowerCase(Locale.ROOT);
+        switch (crop) {
+            case "Pulses": return value.matches(".*(gram|chana|lentil|masur|moong|mung|urad|arhar|tur|pea|pulses|dal).*");
+            case "Oilseeds": return value.matches(".*(mustard|rapeseed|groundnut|sesame|til|soyabean|soybean|sunflower|safflower|linseed|castor|oilseed).*");
+            case "Rice": return value.contains("rice") || value.contains("paddy");
+            case "Maize": return value.contains("maize") || value.contains("corn");
+            case "Grapes": return value.contains("grape");
+            case "Sugarcane": return value.contains("sugar");
+            default: return value.contains(crop.toLowerCase(Locale.ROOT));
+        }
     }
 
     public List<String> getDistrictsByState(String state) {
@@ -277,11 +394,7 @@ public class MandiPriceService {
                 ));
                 break;
             default:
-                // Default districts for other states
-                districts.addAll(Arrays.asList(
-                    "Capital", "Major City", "Industrial Hub", "Agricultural Center",
-                    "Tourist Destination", "Port City", "Mining Center", "Educational Hub"
-                ));
+                // Don't show made-up district names when no real list is configured.
                 break;
         }
         
@@ -524,6 +637,12 @@ public class MandiPriceService {
             case "potato": return "आलू";
             case "onion": return "प्याज़";
             case "tomato": return "टमाटर";
+            case "grapes": return "अंगूर";
+            case "pulses": return "दलहन";
+            case "oilseeds": return "तिलहन";
+            case "sugarcane": return "गन्ना";
+            case "cotton": return "कपास";
+            case "jute": return "जूट";
             default: return cropName;
         }
     }

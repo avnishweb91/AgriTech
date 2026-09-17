@@ -16,6 +16,7 @@ const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) console.warn('JWT_SECRET is not configured');
 const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN) : null;
+const mandiOptionsCache = new Map();
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const auth = (req, res, next) => {
@@ -28,13 +29,44 @@ app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1'); res.json({ ok: true, service: 'agritech-api' });
 }));
 
+app.get('/mandi/options', asyncRoute(async (req, res) => {
+  const apiKey = process.env.DATA_GOV_IN_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Official mandi-price API key is not configured', source: 'data.gov.in' });
+  const state = String(req.query.state || '').trim();
+  if (!state) return res.status(400).json({ error: 'state is required' });
+  const cacheKey = state.toLowerCase();
+  const cached = mandiOptionsCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt < 5 * 60 * 1000) {
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.json(cached.body);
+  }
+  const url = new URL('https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070');
+  url.searchParams.set('api-key', apiKey);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1000');
+  url.searchParams.set('filters[state]', state);
+  const upstream = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+  if (!upstream.ok) return res.status(502).json({ error: 'Official mandi-price source unavailable', source: 'data.gov.in' });
+  const data = await upstream.json();
+  const records = data.records || [];
+  const body = {
+    state,
+    districts: [...new Set(records.map(record => String(record.district || '').trim()).filter(Boolean))].sort(),
+    commodities: [...new Set(records.map(record => String(record.commodity || '').trim()).filter(Boolean))].sort(),
+    fetchedAt: new Date().toISOString()
+  };
+  mandiOptionsCache.set(cacheKey, { savedAt: Date.now(), body });
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(body);
+}));
+
 app.get('/mandi/prices', asyncRoute(async (req, res) => {
   const apiKey = process.env.DATA_GOV_IN_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'Official mandi-price API key is not configured', source: 'data.gov.in' });
   const url = new URL('https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070');
   url.searchParams.set('api-key', apiKey);
   url.searchParams.set('format', 'json');
-  url.searchParams.set('limit', '100');
+  url.searchParams.set('limit', req.query.commodity ? '100' : '1000');
   if (req.query.commodity) url.searchParams.set('filters[commodity]', String(req.query.commodity));
   if (req.query.state) url.searchParams.set('filters[state]', String(req.query.state));
   if (req.query.district) url.searchParams.set('filters[district]', String(req.query.district));

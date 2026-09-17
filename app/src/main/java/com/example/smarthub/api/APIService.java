@@ -17,6 +17,8 @@ import com.google.gson.annotations.SerializedName;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
 
 public class APIService {
     private static final String TAG = "APIService";
@@ -46,6 +48,9 @@ public class APIService {
 
         @GET("mandi/prices")
         Call<MandiBackendResponse> getMandiPrices(@Query("commodity") String commodity, @Query("state") String state, @Query("district") String district);
+
+        @GET("mandi/options")
+        Call<MandiOptionsResponse> getMandiOptions(@Query("state") String state);
 
         @GET("chat/messages")
         Call<List<ChatMessage>> getChatMessages(@Header("Authorization") String authorization,
@@ -145,6 +150,12 @@ public class APIService {
         public String source;
         public String fetchedAt;
         public List<MandiRecord> records;
+    }
+    public static class MandiOptionsResponse {
+        public String state;
+        public String fetchedAt;
+        public List<String> districts;
+        public List<String> commodities;
     }
     public static class MandiRecord {
         public String state;
@@ -254,8 +265,14 @@ public class APIService {
             .build();
         mandiAPI = mandiRetrofit.create(MandiAPI.class);
 
+        OkHttpClient backendHttpClient = new OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(7, TimeUnit.SECONDS)
+            .callTimeout(8, TimeUnit.SECONDS)
+            .build();
         Retrofit backendRetrofit = new Retrofit.Builder()
             .baseUrl(com.example.smarthub.BuildConfig.AGRI_API_BASE_URL)
+            .client(backendHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build();
         backendAPI = backendRetrofit.create(BackendAPI.class);
