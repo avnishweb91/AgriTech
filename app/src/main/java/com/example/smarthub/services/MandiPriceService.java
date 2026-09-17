@@ -125,6 +125,14 @@ public class MandiPriceService {
             try {
                 Log.d(TAG, "Fetching mandi prices for crop: " + cropName + " in district: " + district + ", state: " + state);
                 List<MandiPrice> prices = fetchOfficialPrices(cropName, normalizeState(state), district);
+                if (prices.isEmpty() && state != null && !state.trim().isEmpty()) {
+                    // Official market records often use a different district spelling/name
+                    // than the app's district picker (for example Bangalore/Bengaluru).
+                    // Keep the selected crop and state filters, but don't let that mismatch
+                    // hide valid government-reported prices for the state.
+                    Log.i(TAG, "No official prices for selected district; retrying for state: " + state);
+                    prices = fetchOfficialPrices(cropName, normalizeState(state), null);
+                }
                 if (prices.isEmpty()) callback.onPriceError("इस फसल और ज़िले के लिए अभी सरकारी भाव उपलब्ध नहीं हैं");
                 else callback.onPricesReceived(prices);
             } catch (Exception e) {
