@@ -47,3 +47,17 @@ CREATE TABLE IF NOT EXISTS payments (
   status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created','paid','failed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(), paid_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS mandi_price_feed (
+  feed_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  district TEXT NOT NULL DEFAULT '',
+  commodity TEXT NOT NULL,
+  market TEXT NOT NULL DEFAULT '',
+  arrival_date TEXT NOT NULL DEFAULT '',
+  feed_date DATE,
+  record JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mandi_price_feed_lookup_idx
+  ON mandi_price_feed (state, district, commodity, feed_date DESC);

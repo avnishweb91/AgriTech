@@ -65,6 +65,7 @@ public class MandiPriceService {
         public final double priceChange;
         public final String priceChangeType; // "up", "down", "stable"
         public final String state;
+        public final String feedDate;
 
         public MandiPrice(String mandiName, String mandiNameHindi, String cropName, String cropNameHindi,
                          double price, String unit, String quality, double previousPrice) {
@@ -73,6 +74,11 @@ public class MandiPriceService {
 
         public MandiPrice(String mandiName, String mandiNameHindi, String cropName, String cropNameHindi,
                          double price, String unit, String quality, double previousPrice, String state) {
+            this(mandiName, mandiNameHindi, cropName, cropNameHindi, price, unit, quality, previousPrice, state, null);
+        }
+
+        public MandiPrice(String mandiName, String mandiNameHindi, String cropName, String cropNameHindi,
+                         double price, String unit, String quality, double previousPrice, String state, String feedDate) {
             this.mandiName = mandiName;
             this.mandiNameHindi = mandiNameHindi;
             this.cropName = cropName;
@@ -85,6 +91,7 @@ public class MandiPriceService {
             this.priceChange = price - previousPrice;
             this.priceChangeType = price > previousPrice ? "up" : (price < previousPrice ? "down" : "stable");
             this.state = state;
+            this.feedDate = feedDate;
         }
     }
 
@@ -168,6 +175,13 @@ public class MandiPriceService {
         if (text.contains("wheat") || text.contains("गेह")) return "Wheat";
         if (text.contains("rice") || text.contains("धान") || text.contains("paddy")) return "Rice";
         if (text.contains("maize") || text.contains("corn") || text.contains("मक्का")) return "Maize";
+        if (text.contains("bhindi") || text.contains("ladies finger") || text.contains("okra") || text.contains("भिंडी")) return "Bhindi(Ladies Finger)";
+        if (text.contains("bitter gourd") || text.contains("karela") || text.contains("करेला")) return "Bitter gourd";
+        if (text.contains("bottle gourd") || text.contains("lauki") || text.contains("लौकी")) return "Bottle gourd";
+        if (text.contains("brinjal") || text.contains("eggplant") || text.contains("बैंगन")) return "Brinjal";
+        if (text.contains("cauliflower") || text.contains("फूलगोभी")) return "Cauliflower";
+        if (text.contains("garlic") || text.contains("लहसुन")) return "Garlic";
+        if (text.contains("pointed gourd") || text.contains("parval") || text.contains("परवल")) return "Pointed gourd(Parval)";
         if (text.contains("potato") || text.contains("आलू")) return "Potato";
         if (text.contains("onion") || text.contains("प्याज")) return "Onion";
         if (text.contains("tomato") || text.contains("टमाटर")) return "Tomato";
@@ -232,7 +246,7 @@ public class MandiPriceService {
             if (modal <= 0) continue;
             String mandi = record.market == null ? (record.district == null ? "मंडी" : record.district) : record.market;
             prices.add(new MandiPrice(mandi, mandi, record.commodity, getCropNameHindi(crop),
-                    modal, "क्विंटल", record.variety == null ? "" : record.variety, modal, record.state));
+                    modal, "क्विंटल", record.variety == null ? "" : record.variety, modal, record.state, record.arrivalDate));
         }
         return prices;
     }
@@ -637,6 +651,13 @@ public class MandiPriceService {
             case "potato": return "आलू";
             case "onion": return "प्याज़";
             case "tomato": return "टमाटर";
+            case "bhindi(ladies finger)": return "भिंडी";
+            case "bitter gourd": return "करेला";
+            case "bottle gourd": return "लौकी";
+            case "brinjal": return "बैंगन";
+            case "cauliflower": return "फूलगोभी";
+            case "garlic": return "लहसुन";
+            case "pointed gourd(parval)": return "परवल";
             case "grapes": return "अंगूर";
             case "pulses": return "दलहन";
             case "oilseeds": return "तिलहन";

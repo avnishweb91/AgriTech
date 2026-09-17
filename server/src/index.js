@@ -73,8 +73,47 @@ app.get('/mandi/prices', asyncRoute(async (req, res) => {
   const upstream = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
   if (!upstream.ok) return res.status(502).json({ error: 'Official mandi-price source unavailable', source: 'data.gov.in' });
   const data = await upstream.json();
+  const records = data.records || [];
+  const parseFeedDate = value => {
+    const text = String(value || '').trim();
+    let match = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+    match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+  };
+  for (const record of records) {
+    const state = String(record.state || '').trim();
+    const district = String(record.district || '').trim();
+    const commodity = String(record.commodity || '').trim();
+    const market = String(record.market || '').trim();
+    const arrivalDate = String(record.arrival_date || record.arrivalDate || '').trim();
+    if (!state || !commodity) continue;
+    const feedDate = parseFeedDate(arrivalDate);
+    const feedId = crypto.createHash('sha256').update([state, district, market, commodity, record.variety || '', arrivalDate].join('|').toLowerCase()).digest('hex');
+    await pool.query(`INSERT INTO mandi_price_feed(feed_id,state,district,commodity,market,arrival_date,feed_date,record)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) ON CONFLICT(feed_id) DO UPDATE SET record=EXCLUDED.record,fetched_at=now()`,
+    [feedId, state, district, commodity, market, arrivalDate, feedDate, JSON.stringify(record)]);
+  }
+  let historicalFallback = false;
+  const requestedCommodity = String(req.query.commodity || '').trim().toLocaleLowerCase();
+  const liveMatches = requestedCommodity
+    ? records.filter(record => String(record.commodity || '').trim().toLocaleLowerCase() === requestedCommodity)
+    : records;
+  let resultRecords = liveMatches;
+  if (!liveMatches.length) {
+    const values = [];
+    const where = [];
+    if (req.query.state) { values.push(String(req.query.state)); where.push(`state ILIKE $${values.length}`); }
+    if (req.query.district) { values.push(String(req.query.district)); where.push(`district ILIKE $${values.length}`); }
+    if (req.query.commodity) { values.push(String(req.query.commodity)); where.push(`commodity ILIKE $${values.length}`); }
+    if (where.length) {
+      const cached = await pool.query(`SELECT record FROM mandi_price_feed WHERE ${where.join(' AND ')} ORDER BY feed_date DESC NULLS LAST, fetched_at DESC LIMIT 500`, values);
+      resultRecords = cached.rows.map(row => row.record);
+      historicalFallback = resultRecords.length > 0;
+    }
+  }
   res.set('Cache-Control', 'public, max-age=900');
-  res.json({ source: 'AGMARKNET via data.gov.in', fetchedAt: new Date().toISOString(), records: data.records || [] });
+  res.json({ source: 'AGMARKNET via data.gov.in', fetchedAt: new Date().toISOString(), historicalFallback, records: resultRecords });
 }));
 
 app.post('/auth/request-otp', asyncRoute(async (req, res) => {

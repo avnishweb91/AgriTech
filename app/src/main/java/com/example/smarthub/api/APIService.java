@@ -149,6 +149,7 @@ public class APIService {
     public static class MandiBackendResponse {
         public String source;
         public String fetchedAt;
+        public boolean historicalFallback;
         public List<MandiRecord> records;
     }
     public static class MandiOptionsResponse {
@@ -163,6 +164,7 @@ public class APIService {
         public String market;
         public String commodity;
         public String variety;
+        @SerializedName("arrival_date") public String arrivalDate;
         @SerializedName("min_price") public String minPrice;
         @SerializedName("max_price") public String maxPrice;
         @SerializedName("modal_price") public String modalPrice;

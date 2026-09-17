@@ -156,6 +156,13 @@ public class PricesFragment extends Fragment {
             "गेहूँ (Wheat)",
             "धान (Rice)",
             "मक्का (Maize)",
+            "भिंडी (Bhindi)",
+            "करेला (Bitter gourd)",
+            "लौकी (Bottle gourd)",
+            "बैंगन (Brinjal)",
+            "फूलगोभी (Cauliflower)",
+            "लहसुन (Garlic)",
+            "परवल (Pointed gourd)",
             "आलू (Potato)",
             "प्याज़ (Onion)",
             "टमाटर (Tomato)",
@@ -530,7 +537,9 @@ public class PricesFragment extends Fragment {
         leftContent.addView(mandiName);
 
         TextView cropInfo = new TextView(requireContext());
-        cropInfo.setText(price.cropNameHindi + " (" + price.quality + ")");
+        String cropDetails = price.cropNameHindi + " (" + price.quality + ")";
+        if (price.feedDate != null && !price.feedDate.trim().isEmpty()) cropDetails += " · भाव की तारीख: " + price.feedDate;
+        cropInfo.setText(cropDetails);
         cropInfo.setTextSize(14);
         cropInfo.setTextColor(getResources().getColor(R.color.text_secondary, null));
         cropInfo.setLayoutParams(new LinearLayout.LayoutParams(
